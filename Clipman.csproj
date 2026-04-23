@@ -17,4 +17,12 @@
     <PackageReference Include="Microsoft.Database.ManagedEsent" Version="3.2.0" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="native\bin\clipman_uia_bridge.dll">
+      <Link>clipman_uia_bridge.dll</Link>
+      <TargetPath>clipman_uia_bridge.dll</TargetPath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

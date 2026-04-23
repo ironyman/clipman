@@ -6,6 +6,7 @@ using Clipman.Models;
 using System.Diagnostics;
 using Microsoft.VisualBasic.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 
@@ -385,6 +386,12 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
 
     private static string? TryGetEdgeUrlFromUiAutomation(IntPtr edgeWindowHandle)
     {
+        var nativeUrl = TryGetEdgeUrlFromNativeBridge(edgeWindowHandle);
+        if (!string.IsNullOrWhiteSpace(nativeUrl))
+        {
+            return nativeUrl;
+        }
+
         try
         {
             var automation = CreateUiAutomationInstance();
@@ -459,6 +466,31 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
             }
 
             return bestCandidate;
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
+    private static string? TryGetEdgeUrlFromNativeBridge(IntPtr edgeWindowHandle)
+    {
+        try
+        {
+            var buffer = new StringBuilder(2048);
+            var chars = GetEdgeUrlFromWindow(edgeWindowHandle, buffer, buffer.Capacity);
+            if (chars > 0)
+            {
+                var value = buffer.ToString().Trim();
+                return NormalizeUrlCandidate(value);
+            }
+        }
+        catch (DllNotFoundException)
+        {
+        }
+        catch (EntryPointNotFoundException)
+        {
         }
         catch
         {
@@ -621,6 +653,10 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [SupportedOSPlatform("windows")]
+    [DllImport("clipman_uia_bridge.dll", CharSet = CharSet.Unicode, CallingConvention = CallingConvention.StdCall)]
+    private static extern int GetEdgeUrlFromWindow(IntPtr hwndEdge, StringBuilder output, int outputChars);
 
     private sealed record SourceContext(
         string? AppName,

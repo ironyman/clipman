@@ -6,3 +6,6 @@ obj/
 *.suo
 *.userosscache
 *.sln.docstates
+/clipman_uia_bridge.exp
+/clipman_uia_bridge.lib
+/clipman_uia_bridge.obj
