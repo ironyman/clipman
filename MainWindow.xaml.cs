@@ -33,6 +33,7 @@ public sealed partial class MainWindow : Window
     private const uint KeyEventfKeyUp = 0x0002;
     private const ushort VkControl = 0x11;
     private const ushort VkV = 0x56;
+    private const uint MonitorDefaultToNearest = 0x00000002;
     private const uint MfString = 0x00000000;
     private const uint MfSeparator = 0x00000800;
     private const uint MfGrayed = 0x00000001;
@@ -126,7 +127,7 @@ public sealed partial class MainWindow : Window
     private void HotKeyService_Pressed(object? sender, EventArgs e)
     {
         _lastHotkeyFocus = CaptureFocusSnapshot();
-        DispatcherQueue.TryEnqueue(ShowMainWindow);
+        DispatcherQueue.TryEnqueue(() => ShowMainWindow(centerOnFocusWindow: true));
     }
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e)
@@ -225,7 +226,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        ShowMainWindow();
+        ShowMainWindow(centerOnFocusWindow: false);
     }
 
     private void HideMainWindow()
@@ -233,8 +234,13 @@ public sealed partial class MainWindow : Window
         ShowWindow(WindowNative.GetWindowHandle(this), SwHide);
     }
 
-    private void ShowMainWindow()
+    private void ShowMainWindow(bool centerOnFocusWindow)
     {
+        if (centerOnFocusWindow)
+        {
+            CenterWindowOnFocusMonitor(_lastHotkeyFocus.WindowHandle);
+        }
+
         ShowWindow(WindowNative.GetWindowHandle(this), SwShow);
         Activate();
         SetForegroundWindow(WindowNative.GetWindowHandle(this));
@@ -506,6 +512,39 @@ public sealed partial class MainWindow : Window
         return new FocusSnapshot(foreground, focus);
     }
 
+    private void CenterWindowOnFocusMonitor(IntPtr focusWindowHandle)
+    {
+        var targetWindow = focusWindowHandle != IntPtr.Zero ? focusWindowHandle : GetForegroundWindow();
+        if (targetWindow == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var monitor = MonitorFromWindow(targetWindow, MonitorDefaultToNearest);
+        if (monitor == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var info = new MonitorInfo { cbSize = (uint)Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(monitor, ref info))
+        {
+            return;
+        }
+
+        var size = AppWindow.Size;
+        if (size.Width <= 0 || size.Height <= 0)
+        {
+            return;
+        }
+
+        var workWidth = info.rcWork.Right - info.rcWork.Left;
+        var workHeight = info.rcWork.Bottom - info.rcWork.Top;
+        var x = info.rcWork.Left + Math.Max(0, (workWidth - size.Width) / 2);
+        var y = info.rcWork.Top + Math.Max(0, (workHeight - size.Height) / 2);
+        AppWindow.Move(new Windows.Graphics.PointInt32(x, y));
+    }
+
     private void RestoreFocusSnapshot(FocusSnapshot snapshot)
     {
         if (snapshot.WindowHandle == IntPtr.Zero || !IsWindow(snapshot.WindowHandle))
@@ -599,6 +638,13 @@ public sealed partial class MainWindow : Window
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfo lpmi);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, Input[] pInputs, int cbSize);
@@ -846,6 +892,15 @@ public sealed partial class MainWindow : Window
         public int Top;
         public int Right;
         public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct MonitorInfo
+    {
+        public uint cbSize;
+        public NativeRect rcMonitor;
+        public NativeRect rcWork;
+        public uint dwFlags;
     }
 
     [StructLayout(LayoutKind.Sequential)]
