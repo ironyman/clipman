@@ -1,0 +1,30 @@
+namespace Clipman.Models;
+
+public sealed class ClipboardClip
+{
+    public required string Id { get; init; }
+    public required ClipKind Kind { get; init; }
+    public required string Title { get; init; }
+    public required string Preview { get; init; }
+    public string? SourceApp { get; init; }
+    public string? FormatLabel { get; init; }
+    public DateTimeOffset CopiedAt { get; init; }
+    public bool IsPinned { get; init; }
+    public int UseCount { get; init; }
+    public string? AccentHex { get; init; }
+
+    public string RelativeTime
+    {
+        get
+        {
+            var elapsed = DateTimeOffset.Now - CopiedAt;
+            if (elapsed.TotalMinutes < 1) return "Just now";
+            if (elapsed.TotalHours < 1) return $"{(int)elapsed.TotalMinutes} min";
+            if (elapsed.TotalDays < 1) return $"{(int)elapsed.TotalHours} hr";
+            return $"{(int)elapsed.TotalDays} d";
+        }
+    }
+
+    public string Metadata =>
+        string.Join(" - ", new[] { FormatLabel, SourceApp, RelativeTime }.Where(value => !string.IsNullOrWhiteSpace(value)));
+}

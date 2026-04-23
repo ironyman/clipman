@@ -1,0 +1,287 @@
+<Window
+    x:Class="Clipman.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:converters="using:Clipman.Converters"
+    xmlns:models="using:Clipman.Models"
+    Title="Clipman">
+
+    <Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <Grid.Resources>
+            <converters:ClipKindToIconGlyphConverter x:Key="KindIconConverter" />
+            <converters:PinnedGlyphConverter x:Key="PinnedGlyphConverter" />
+
+            <Style x:Key="MetricTextStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Style>
+
+            <Style x:Key="FilterButtonStyle" TargetType="Button">
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="Padding" Value="12,7" />
+                <Setter Property="CornerRadius" Value="6" />
+            </Style>
+        </Grid.Resources>
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="48" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid x:Name="DragRegion" Padding="16,0,16,0" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <FontIcon Glyph="&#xE8C8;" FontSize="18" />
+                <TextBlock Text="Clipman" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button ToolTipService.ToolTip="Pin current clip">
+                    <FontIcon Glyph="&#xE718;" />
+                </Button>
+                <Button ToolTipService.ToolTip="Settings">
+                    <FontIcon Glyph="&#xE713;" />
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="1" Padding="16,8,16,16" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220" />
+                <ColumnDefinition Width="420" MinWidth="320" />
+                <ColumnDefinition Width="*" MinWidth="340" />
+            </Grid.ColumnDefinitions>
+
+            <NavigationView
+                IsBackButtonVisible="Collapsed"
+                IsSettingsVisible="False"
+                PaneDisplayMode="LeftMinimal"
+                IsPaneToggleButtonVisible="False"
+                OpenPaneLength="220"
+                IsPaneOpen="True"
+                SelectionChanged="NavigationView_SelectionChanged">
+                <NavigationView.MenuItems>
+                    <NavigationViewItem Content="History" IsSelected="True" Tag="History">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE823;" />
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
+                    <NavigationViewItem Content="Pinned" Tag="Pinned">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE718;" />
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
+                    <NavigationViewItem Content="Groups" Tag="Groups">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE8F1;" />
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
+                    <NavigationViewItem Content="Sync" Tag="Sync">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE895;" />
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
+                    <NavigationViewItem Content="Stats" Tag="Stats">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE9D2;" />
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
+                </NavigationView.MenuItems>
+                <NavigationView.FooterMenuItems>
+                    <NavigationViewItem Content="Options" Tag="Options">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE713;" />
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
+                </NavigationView.FooterMenuItems>
+            </NavigationView>
+
+            <Grid Grid.Column="1" RowSpacing="12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <AutoSuggestBox
+                        QueryIcon="Find"
+                        PlaceholderText="Search clipboard history"
+                        Text="{Binding SearchQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <Button Grid.Column="1" ToolTipService.ToolTip="Advanced search">
+                        <FontIcon Glyph="&#xE71C;" />
+                    </Button>
+                </Grid>
+
+                <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Hidden" HorizontalScrollMode="Auto">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="All" Tag="" Click="FilterButton_Click" Style="{StaticResource FilterButtonStyle}" />
+                        <Button Content="Text" Tag="Text" Click="FilterButton_Click" Style="{StaticResource FilterButtonStyle}" />
+                        <Button Content="Code" Tag="Code" Click="FilterButton_Click" Style="{StaticResource FilterButtonStyle}" />
+                        <Button Content="URL" Tag="Url" Click="FilterButton_Click" Style="{StaticResource FilterButtonStyle}" />
+                        <Button Content="Image" Tag="Image" Click="FilterButton_Click" Style="{StaticResource FilterButtonStyle}" />
+                        <Button Content="HTML" Tag="Html" Click="FilterButton_Click" Style="{StaticResource FilterButtonStyle}" />
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ListView
+                    Grid.Row="2"
+                    ItemsSource="{Binding VisibleClips}"
+                    SelectedItem="{Binding SelectedClip, Mode=TwoWay}"
+                    SelectionMode="Single">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0,0,0,8" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="models:ClipboardClip">
+                            <Grid Padding="12" ColumnSpacing="12" MinHeight="92">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="40" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <Border Width="40" Height="40" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                    <FontIcon
+                                        Glyph="{Binding Kind, Converter={StaticResource KindIconConverter}}"
+                                        FontSize="18"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center" />
+                                </Border>
+
+                                <StackPanel Grid.Column="1" Spacing="5">
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock
+                                        Text="{Binding Preview}"
+                                        MaxLines="2"
+                                        TextWrapping="Wrap"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock Text="{Binding Metadata}" Style="{StaticResource MetricTextStyle}" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+
+                                <FontIcon
+                                    Grid.Column="2"
+                                    Glyph="{Binding IsPinned, Converter={StaticResource PinnedGlyphConverter}}"
+                                    FontSize="13"
+                                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                    VerticalAlignment="Top" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+
+            <Grid Grid.Column="2" RowSpacing="12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{Binding FilterLabel}" FontSize="22" FontWeight="SemiBold" />
+                        <TextBlock Style="{StaticResource MetricTextStyle}">
+                            <Run Text="{Binding SavedCount}" />
+                            <Run Text=" saved clips - " />
+                            <Run Text="{Binding PinnedCount}" />
+                            <Run Text=" pinned" />
+                        </TextBlock>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+                        <Button ToolTipService.ToolTip="Paste selected clip">
+                            <FontIcon Glyph="&#xE77F;" />
+                        </Button>
+                        <Button ToolTipService.ToolTip="Copy selected clip">
+                            <FontIcon Glyph="&#xE8C8;" />
+                        </Button>
+                        <Button ToolTipService.ToolTip="Delete selected clip">
+                            <FontIcon Glyph="&#xE74D;" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <Border
+                    Grid.Row="1"
+                    Padding="20"
+                    CornerRadius="8"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1">
+                    <Grid RowSpacing="16">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding SelectedClip.Title}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding SelectedClip.Metadata}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+
+                        <ScrollViewer Grid.Row="1">
+                            <TextBlock
+                                Text="{Binding SelectedClip.Preview}"
+                                FontSize="15"
+                                TextWrapping="Wrap"
+                                IsTextSelectionEnabled="True" />
+                        </ScrollViewer>
+
+                        <InfoBar
+                            Grid.Row="2"
+                            IsOpen="True"
+                            Severity="Informational"
+                            Title="Local-first by design"
+                            Message="Real capture and SQLite persistence belong behind the clipboard history service." />
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Row="2" ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button HorizontalAlignment="Stretch">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE768;" />
+                            <TextBlock Text="Paste" />
+                        </StackPanel>
+                    </Button>
+                    <Button Grid.Column="1" HorizontalAlignment="Stretch">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE8C8;" />
+                            <TextBlock Text="Copy" />
+                        </StackPanel>
+                    </Button>
+                    <Button Grid.Column="2" HorizontalAlignment="Stretch">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE70F;" />
+                            <TextBlock Text="Edit" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>
