@@ -11,8 +11,10 @@ public sealed class ClipKindToIconGlyphConverter : IValueConverter
             ClipKind.Code => "\uE943",
             ClipKind.Url => "\uE71B",
             ClipKind.Image => "\uEB9F",
+            ClipKind.Video => "\uE714",
             ClipKind.Html => "\uE8A5",
             ClipKind.File => "\uE8A5",
+            ClipKind.Other => "\uE8FD",
             _ => "\uE8C8"
         };
 

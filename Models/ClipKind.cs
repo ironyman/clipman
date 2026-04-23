@@ -6,6 +6,8 @@ public enum ClipKind
     Code,
     Url,
     Image,
+    Video,
     Html,
-    File
+    File,
+    Other
 }

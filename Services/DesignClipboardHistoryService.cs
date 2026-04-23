@@ -4,7 +4,15 @@ namespace Clipman.Services;
 
 public sealed class DesignClipboardHistoryService : IClipboardHistoryService
 {
-    public Task<IReadOnlyList<ClipboardClip>> GetRecentAsync(CancellationToken cancellationToken = default)
+    public event EventHandler<ClipboardClip>? ClipAdded;
+
+    public Task<IReadOnlyList<ClipboardClip>> GetPageAsync(
+        int skip,
+        int take,
+        string? query = null,
+        ClipKind? kind = null,
+        bool pinnedOnly = false,
+        CancellationToken cancellationToken = default)
     {
         IReadOnlyList<ClipboardClip> clips =
         [
@@ -84,6 +92,30 @@ public sealed class DesignClipboardHistoryService : IClipboardHistoryService
             }
         ];
 
-        return Task.FromResult(clips);
+        var filtered = clips.Where(clip =>
+            (!pinnedOnly || clip.IsPinned) &&
+            (kind is null || clip.Kind == kind) &&
+            (string.IsNullOrWhiteSpace(query) ||
+             clip.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+             clip.Preview.Contains(query, StringComparison.OrdinalIgnoreCase)));
+
+        return Task.FromResult<IReadOnlyList<ClipboardClip>>(filtered.Skip(skip).Take(take).ToList());
+    }
+
+    public Task<int> CountAsync(CancellationToken cancellationToken = default) => Task.FromResult(6);
+
+    public Task CaptureCurrentClipboardAsync(CancellationToken cancellationToken = default)
+    {
+        ClipAdded?.Invoke(this, new ClipboardClip
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Kind = ClipKind.Text,
+            Title = "Current clipboard",
+            Preview = "Captured from the clipboard listener.",
+            FormatLabel = "Design capture",
+            CopiedAt = DateTimeOffset.Now
+        });
+
+        return Task.CompletedTask;
     }
 }

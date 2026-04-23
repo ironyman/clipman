@@ -7,20 +7,26 @@ namespace Clipman.ViewModels;
 
 public sealed class MainViewModel : ObservableObject
 {
+    private const int PageSize = 50;
     private readonly IClipboardHistoryService _clipboardHistoryService;
-    private readonly List<ClipboardClip> _allClips = [];
     private ClipboardClip? _selectedClip;
     private string _searchQuery = string.Empty;
     private ClipKind? _selectedKind;
     private bool _showPinnedOnly;
+    private int _loadedCount;
+    private int _savedCount;
+    private int _pinnedCount;
+    private bool _isLoading;
 
     public MainViewModel(IClipboardHistoryService clipboardHistoryService)
     {
         _clipboardHistoryService = clipboardHistoryService;
+        _clipboardHistoryService.ClipAdded += ClipboardHistoryService_ClipAdded;
         SelectKindCommand = new RelayCommand(parameter =>
         {
             SelectedKind = parameter is ClipKind kind ? kind : null;
         });
+        LoadMoreCommand = new RelayCommand(async _ => await LoadMoreAsync(), _ => !IsLoading);
     }
 
     public ObservableCollection<ClipboardClip> VisibleClips { get; } = [];
@@ -31,11 +37,15 @@ public sealed class MainViewModel : ObservableObject
         ClipKind.Code,
         ClipKind.Url,
         ClipKind.Image,
+        ClipKind.Video,
         ClipKind.Html,
-        ClipKind.File
+        ClipKind.File,
+        ClipKind.Other
     ];
 
     public ICommand SelectKindCommand { get; }
+
+    public ICommand LoadMoreCommand { get; }
 
     public ClipboardClip? SelectedClip
     {
@@ -50,7 +60,7 @@ public sealed class MainViewModel : ObservableObject
         {
             if (SetProperty(ref _searchQuery, value))
             {
-                ApplyFilters();
+                _ = RefreshAsync();
             }
         }
     }
@@ -63,7 +73,7 @@ public sealed class MainViewModel : ObservableObject
             if (SetProperty(ref _selectedKind, value))
             {
                 OnPropertyChanged(nameof(FilterLabel));
-                ApplyFilters();
+                _ = RefreshAsync();
             }
         }
     }
@@ -76,45 +86,108 @@ public sealed class MainViewModel : ObservableObject
             if (SetProperty(ref _showPinnedOnly, value))
             {
                 OnPropertyChanged(nameof(FilterLabel));
-                ApplyFilters();
+                _ = RefreshAsync();
             }
         }
     }
 
     public string FilterLabel => ShowPinnedOnly ? "Pinned clips" : SelectedKind?.ToString() ?? "All clips";
 
-    public int SavedCount => _allClips.Count;
+    public int SavedCount
+    {
+        get => _savedCount;
+        private set => SetProperty(ref _savedCount, value);
+    }
 
-    public int PinnedCount => _allClips.Count(clip => clip.IsPinned);
+    public int PinnedCount
+    {
+        get => _pinnedCount;
+        private set => SetProperty(ref _pinnedCount, value);
+    }
+
+    public bool IsLoading
+    {
+        get => _isLoading;
+        private set
+        {
+            if (SetProperty(ref _isLoading, value) && LoadMoreCommand is RelayCommand command)
+            {
+                command.RaiseCanExecuteChanged();
+            }
+        }
+    }
 
     public async Task LoadAsync()
     {
-        var clips = await _clipboardHistoryService.GetRecentAsync();
-        _allClips.Clear();
-        _allClips.AddRange(clips.OrderByDescending(clip => clip.IsPinned).ThenByDescending(clip => clip.CopiedAt));
-
-        OnPropertyChanged(nameof(SavedCount));
-        OnPropertyChanged(nameof(PinnedCount));
-        ApplyFilters();
+        SavedCount = await _clipboardHistoryService.CountAsync();
+        await RefreshAsync();
     }
 
-    private void ApplyFilters()
+    public async Task RefreshAsync()
     {
-        var query = SearchQuery.Trim();
-        var filtered = _allClips.Where(clip =>
-            (!ShowPinnedOnly || clip.IsPinned) &&
-            (SelectedKind is null || clip.Kind == SelectedKind) &&
-            (query.Length == 0 ||
-             clip.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-             clip.Preview.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-             (clip.SourceApp?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)));
+        if (IsLoading)
+        {
+            return;
+        }
 
-        VisibleClips.Clear();
-        foreach (var clip in filtered)
+        IsLoading = true;
+        try
+        {
+            _loadedCount = 0;
+            VisibleClips.Clear();
+            await LoadPageAsync();
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    public async Task LoadMoreAsync()
+    {
+        if (IsLoading)
+        {
+            return;
+        }
+
+        IsLoading = true;
+        try
+        {
+            await LoadPageAsync();
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task LoadPageAsync()
+    {
+        var page = await _clipboardHistoryService.GetPageAsync(
+            _loadedCount,
+            PageSize,
+            SearchQuery,
+            SelectedKind,
+            ShowPinnedOnly);
+
+        foreach (var clip in page)
         {
             VisibleClips.Add(clip);
         }
 
-        SelectedClip = VisibleClips.FirstOrDefault();
+        _loadedCount += page.Count;
+        SelectedClip ??= VisibleClips.FirstOrDefault();
+        PinnedCount = VisibleClips.Count(clip => clip.IsPinned);
+    }
+
+    private void ClipboardHistoryService_ClipAdded(object? sender, ClipboardClip clip)
+    {
+        SavedCount++;
+        if ((!ShowPinnedOnly || clip.IsPinned) && (SelectedKind is null || clip.Kind == SelectedKind))
+        {
+            VisibleClips.Insert(0, clip);
+            SelectedClip = clip;
+            _loadedCount++;
+        }
     }
 }

@@ -6,6 +6,10 @@ public sealed class ClipboardClip
     public required ClipKind Kind { get; init; }
     public required string Title { get; init; }
     public required string Preview { get; init; }
+    public string? ContentText { get; init; }
+    public byte[]? ContentBytes { get; init; }
+    public string? ReferencePath { get; init; }
+    public string? FormatsJson { get; init; }
     public string? SourceApp { get; init; }
     public string? FormatLabel { get; init; }
     public DateTimeOffset CopiedAt { get; init; }

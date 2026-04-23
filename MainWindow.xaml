@@ -44,7 +44,7 @@
                 <Button ToolTipService.ToolTip="Pin current clip">
                     <FontIcon Glyph="&#xE718;" />
                 </Button>
-                <Button ToolTipService.ToolTip="Settings">
+                <Button ToolTipService.ToolTip="Settings" Click="SettingsButton_Click">
                     <FontIcon Glyph="&#xE713;" />
                 </Button>
             </StackPanel>
@@ -106,6 +106,7 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <Grid ColumnSpacing="8">
@@ -131,6 +132,8 @@
                         <Button Content="Code" Tag="Code" Click="FilterButton_Click" Style="{StaticResource FilterButtonStyle}" />
                         <Button Content="URL" Tag="Url" Click="FilterButton_Click" Style="{StaticResource FilterButtonStyle}" />
                         <Button Content="Image" Tag="Image" Click="FilterButton_Click" Style="{StaticResource FilterButtonStyle}" />
+                        <Button Content="Video" Tag="Video" Click="FilterButton_Click" Style="{StaticResource FilterButtonStyle}" />
+                        <Button Content="File" Tag="File" Click="FilterButton_Click" Style="{StaticResource FilterButtonStyle}" />
                         <Button Content="HTML" Tag="Html" Click="FilterButton_Click" Style="{StaticResource FilterButtonStyle}" />
                     </StackPanel>
                 </ScrollViewer>
@@ -139,7 +142,8 @@
                     Grid.Row="2"
                     ItemsSource="{Binding VisibleClips}"
                     SelectedItem="{Binding SelectedClip, Mode=TwoWay}"
-                    SelectionMode="Single">
+                    SelectionMode="Single"
+                    DoubleTapped="HistoryList_DoubleTapped">
                     <ListView.ItemContainerStyle>
                         <Style TargetType="ListViewItem">
                             <Setter Property="Padding" Value="0" />
@@ -184,6 +188,17 @@
                         </DataTemplate>
                     </ListView.ItemTemplate>
                 </ListView>
+
+                <Button
+                    Grid.Row="3"
+                    Margin="0,4,0,0"
+                    HorizontalAlignment="Stretch"
+                    Command="{Binding LoadMoreCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE710;" />
+                        <TextBlock Text="Load more history" />
+                    </StackPanel>
+                </Button>
             </Grid>
 
             <Grid Grid.Column="2" RowSpacing="12">
@@ -251,8 +266,8 @@
                             Grid.Row="2"
                             IsOpen="True"
                             Severity="Informational"
-                            Title="Local-first by design"
-                            Message="Real capture and SQLite persistence belong behind the clipboard history service." />
+                            Title="Local ESENT history"
+                            Message="The listener stores copied text and in-memory images, and keeps file or video clipboard entries as references." />
                     </Grid>
                 </Border>
 
@@ -281,6 +296,7 @@
                         </StackPanel>
                     </Button>
                 </Grid>
+
             </Grid>
         </Grid>
     </Grid>
