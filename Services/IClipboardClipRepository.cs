@@ -2,10 +2,8 @@ using Clipman.Models;
 
 namespace Clipman.Services;
 
-public interface IClipboardHistoryService
+public interface IClipboardClipRepository
 {
-    event EventHandler<ClipboardClip>? ClipAdded;
-
     Task<IReadOnlyList<ClipboardClip>> GetPageAsync(
         int skip,
         int take,
@@ -16,7 +14,9 @@ public interface IClipboardHistoryService
 
     Task<int> CountAsync(CancellationToken cancellationToken = default);
 
-    Task CaptureAndStoreAsync(CancellationToken cancellationToken = default);
+    Task<bool> ExistsAsync(string id, CancellationToken cancellationToken = default);
+
+    Task AddAsync(ClipboardClip clip, CancellationToken cancellationToken = default);
 
     Task SetPinnedAsync(string id, bool isPinned, CancellationToken cancellationToken = default);
 

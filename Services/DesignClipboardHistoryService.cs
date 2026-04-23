@@ -104,7 +104,7 @@ public sealed class DesignClipboardHistoryService : IClipboardHistoryService
 
     public Task<int> CountAsync(CancellationToken cancellationToken = default) => Task.FromResult(6);
 
-    public Task CaptureCurrentClipboardAsync(CancellationToken cancellationToken = default)
+    public Task CaptureAndStoreAsync(CancellationToken cancellationToken = default)
     {
         ClipAdded?.Invoke(this, new ClipboardClip
         {
@@ -118,4 +118,10 @@ public sealed class DesignClipboardHistoryService : IClipboardHistoryService
 
         return Task.CompletedTask;
     }
+
+    public Task SetPinnedAsync(string id, bool isPinned, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    public Task DeleteAsync(string id, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
 }

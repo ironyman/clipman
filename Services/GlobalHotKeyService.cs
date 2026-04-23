@@ -22,6 +22,7 @@ public sealed class GlobalHotKeyService : IDisposable
     }
 
     public event EventHandler? Pressed;
+    public event Func<uint, IntPtr, IntPtr, bool>? WindowMessageReceived;
 
     public bool Register(HotKeySettings settings)
     {
@@ -65,6 +66,11 @@ public sealed class GlobalHotKeyService : IDisposable
 
     private IntPtr WindowProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
+        if (WindowMessageReceived?.Invoke(msg, wParam, lParam) == true)
+        {
+            return IntPtr.Zero;
+        }
+
         if (msg == WmHotKey && wParam.ToInt32() == HotKeyId)
         {
             Pressed?.Invoke(this, EventArgs.Empty);

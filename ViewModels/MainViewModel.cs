@@ -17,6 +17,8 @@ public sealed class MainViewModel : ObservableObject
     private int _savedCount;
     private int _pinnedCount;
     private bool _isLoading;
+    private bool _hasMore = true;
+    private CancellationTokenSource? _searchDebounceCts;
 
     public MainViewModel(IClipboardHistoryService clipboardHistoryService)
     {
@@ -26,7 +28,6 @@ public sealed class MainViewModel : ObservableObject
         {
             SelectedKind = parameter is ClipKind kind ? kind : null;
         });
-        LoadMoreCommand = new RelayCommand(async _ => await LoadMoreAsync(), _ => !IsLoading);
     }
 
     public ObservableCollection<ClipboardClip> VisibleClips { get; } = [];
@@ -45,8 +46,6 @@ public sealed class MainViewModel : ObservableObject
 
     public ICommand SelectKindCommand { get; }
 
-    public ICommand LoadMoreCommand { get; }
-
     public ClipboardClip? SelectedClip
     {
         get => _selectedClip;
@@ -60,7 +59,7 @@ public sealed class MainViewModel : ObservableObject
         {
             if (SetProperty(ref _searchQuery, value))
             {
-                _ = RefreshAsync();
+                _ = DebounceSearchRefreshAsync();
             }
         }
     }
@@ -108,13 +107,13 @@ public sealed class MainViewModel : ObservableObject
     public bool IsLoading
     {
         get => _isLoading;
-        private set
-        {
-            if (SetProperty(ref _isLoading, value) && LoadMoreCommand is RelayCommand command)
-            {
-                command.RaiseCanExecuteChanged();
-            }
-        }
+        private set => SetProperty(ref _isLoading, value);
+    }
+
+    public bool HasMore
+    {
+        get => _hasMore;
+        private set => SetProperty(ref _hasMore, value);
     }
 
     public async Task LoadAsync()
@@ -134,6 +133,7 @@ public sealed class MainViewModel : ObservableObject
         try
         {
             _loadedCount = 0;
+            HasMore = true;
             VisibleClips.Clear();
             await LoadPageAsync();
         }
@@ -146,6 +146,11 @@ public sealed class MainViewModel : ObservableObject
     public async Task LoadMoreAsync()
     {
         if (IsLoading)
+        {
+            return;
+        }
+
+        if (!HasMore)
         {
             return;
         }
@@ -176,6 +181,8 @@ public sealed class MainViewModel : ObservableObject
         }
 
         _loadedCount += page.Count;
+        HasMore = page.Count >= PageSize;
+        ReorderVisibleClips();
         SelectedClip ??= VisibleClips.FirstOrDefault();
         PinnedCount = VisibleClips.Count(clip => clip.IsPinned);
     }
@@ -186,8 +193,44 @@ public sealed class MainViewModel : ObservableObject
         if ((!ShowPinnedOnly || clip.IsPinned) && (SelectedKind is null || clip.Kind == SelectedKind))
         {
             VisibleClips.Insert(0, clip);
-            SelectedClip = clip;
             _loadedCount++;
+            ReorderVisibleClips();
+            SelectedClip = VisibleClips.FirstOrDefault(item => item.Id == clip.Id) ?? clip;
+        }
+    }
+
+    private async Task DebounceSearchRefreshAsync()
+    {
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts = new CancellationTokenSource();
+        var token = _searchDebounceCts.Token;
+        try
+        {
+            await Task.Delay(260, token);
+            await RefreshAsync();
+        }
+        catch (TaskCanceledException)
+        {
+        }
+    }
+
+    private void ReorderVisibleClips()
+    {
+        var selectedId = SelectedClip?.Id;
+        var ordered = VisibleClips
+            .OrderByDescending(clip => clip.IsPinned)
+            .ThenByDescending(clip => clip.CopiedAt)
+            .ToList();
+
+        VisibleClips.Clear();
+        foreach (var clip in ordered)
+        {
+            VisibleClips.Add(clip);
+        }
+
+        if (selectedId is not null)
+        {
+            SelectedClip = VisibleClips.FirstOrDefault(clip => clip.Id == selectedId) ?? VisibleClips.FirstOrDefault();
         }
     }
 }

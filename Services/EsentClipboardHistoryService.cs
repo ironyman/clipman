@@ -1,15 +1,10 @@
-using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using Clipman.Models;
 using Microsoft.Isam.Esent.Interop;
-using Windows.ApplicationModel.DataTransfer;
-using Windows.Storage;
-using Windows.Storage.Streams;
 
 namespace Clipman.Services;
 
-public sealed class EsentClipboardHistoryService : IClipboardHistoryService, IDisposable
+public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDisposable
 {
     private const string TableName = "Clips";
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -41,8 +36,6 @@ public sealed class EsentClipboardHistoryService : IClipboardHistoryService, IDi
         _instance.Init();
         EnsureDatabase();
     }
-
-    public event EventHandler<ClipboardClip>? ClipAdded;
 
     public async Task<IReadOnlyList<ClipboardClip>> GetPageAsync(
         int skip,
@@ -81,32 +74,6 @@ public sealed class EsentClipboardHistoryService : IClipboardHistoryService, IDi
         {
             _gate.Release();
         }
-    }
-
-    public async Task CaptureCurrentClipboardAsync(CancellationToken cancellationToken = default)
-    {
-        var clip = await ClipboardClipFactory.FromClipboardAsync(cancellationToken);
-        if (clip is null)
-        {
-            return;
-        }
-
-        await _gate.WaitAsync(cancellationToken);
-        try
-        {
-            if (Exists(clip.Id))
-            {
-                return;
-            }
-
-            WriteClip(clip);
-        }
-        finally
-        {
-            _gate.Release();
-        }
-
-        ClipAdded?.Invoke(this, clip);
     }
 
     public void Dispose()
@@ -150,6 +117,10 @@ public sealed class EsentClipboardHistoryService : IClipboardHistoryService, IDi
                 AddColumn(session, table, "ReferencePath", JET_coltyp.LongText);
                 AddColumn(session, table, "FormatsJson", JET_coltyp.LongText);
                 AddColumn(session, table, "SourceApp", JET_coltyp.LongText);
+                AddColumn(session, table, "SourceWindowTitle", JET_coltyp.LongText);
+                AddColumn(session, table, "BrowserTabTitle", JET_coltyp.LongText);
+                AddColumn(session, table, "SourceUrl", JET_coltyp.LongText);
+                AddColumn(session, table, "SourceDomain", JET_coltyp.LongText);
                 AddColumn(session, table, "FormatLabel", JET_coltyp.LongText);
                 AddColumn(session, table, "CopiedAt", JET_coltyp.Currency);
                 AddColumn(session, table, "IsPinned", JET_coltyp.Bit);
@@ -165,7 +136,17 @@ public sealed class EsentClipboardHistoryService : IClipboardHistoryService, IDi
         }
         catch (EsentTableDuplicateException)
         {
+            EnsureSchemaColumns(session, dbid);
         }
+    }
+
+    private static void EnsureSchemaColumns(Session session, JET_DBID dbid)
+    {
+        using var table = new Table(session, dbid, TableName, OpenTableGrbit.None);
+        AddColumnIfMissing(session, table, "SourceWindowTitle", JET_coltyp.LongText);
+        AddColumnIfMissing(session, table, "BrowserTabTitle", JET_coltyp.LongText);
+        AddColumnIfMissing(session, table, "SourceUrl", JET_coltyp.LongText);
+        AddColumnIfMissing(session, table, "SourceDomain", JET_coltyp.LongText);
     }
 
     private static void AddColumn(Session session, JET_TABLEID table, string name, JET_coltyp type)
@@ -176,6 +157,17 @@ public sealed class EsentClipboardHistoryService : IClipboardHistoryService, IDi
             cp = JET_CP.Unicode
         };
         Api.JetAddColumn(session, table, name, definition, null, 0, out _);
+    }
+
+    private static void AddColumnIfMissing(Session session, JET_TABLEID table, string name, JET_coltyp type)
+    {
+        try
+        {
+            AddColumn(session, table, name, type);
+        }
+        catch (EsentColumnDuplicateException)
+        {
+        }
     }
 
     private JET_DBID OpenDatabase(Session session)
@@ -228,44 +220,124 @@ public sealed class EsentClipboardHistoryService : IClipboardHistoryService, IDi
                 clip.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 clip.Preview.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 (clip.ReferencePath?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (clip.ContentText?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
+                (clip.ContentText?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (clip.SourceApp?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (clip.SourceWindowTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (clip.BrowserTabTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (clip.SourceUrl?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (clip.SourceDomain?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
     }
 
-    private bool Exists(string id)
+    public async Task<bool> ExistsAsync(string id, CancellationToken cancellationToken = default)
     {
-        using var session = new Session(_instance);
-        var dbid = OpenDatabase(session);
-        using var table = new Table(session, dbid, TableName, OpenTableGrbit.ReadOnly);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            using var session = new Session(_instance);
+            var dbid = OpenDatabase(session);
+            using var table = new Table(session, dbid, TableName, OpenTableGrbit.ReadOnly);
 
-        Api.JetSetCurrentIndex(session, table, "primary");
-        Api.MakeKey(session, table, id, Encoding.Unicode, MakeKeyGrbit.NewKey);
-        return Api.TrySeek(session, table, SeekGrbit.SeekEQ);
+            Api.JetSetCurrentIndex(session, table, "primary");
+            Api.MakeKey(session, table, id, Encoding.Unicode, MakeKeyGrbit.NewKey);
+            return Api.TrySeek(session, table, SeekGrbit.SeekEQ);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
-    private void WriteClip(ClipboardClip clip)
+    public async Task AddAsync(ClipboardClip clip, CancellationToken cancellationToken = default)
     {
-        using var session = new Session(_instance);
-        var dbid = OpenDatabase(session);
-        using var table = new Table(session, dbid, TableName, OpenTableGrbit.None);
-        var columns = Columns(session, table);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            using var session = new Session(_instance);
+            var dbid = OpenDatabase(session);
+            using var table = new Table(session, dbid, TableName, OpenTableGrbit.None);
+            var columns = Columns(session, table);
 
-        using var transaction = new Transaction(session);
-        using var update = new Update(session, table, JET_prep.Insert);
-        SetText(session, table, columns["Id"], clip.Id);
-        SetText(session, table, columns["Kind"], clip.Kind.ToString());
-        SetText(session, table, columns["Title"], clip.Title);
-        SetText(session, table, columns["Preview"], clip.Preview);
-        SetText(session, table, columns["ContentText"], clip.ContentText);
-        SetBytes(session, table, columns["ContentBytes"], clip.ContentBytes);
-        SetText(session, table, columns["ReferencePath"], clip.ReferencePath);
-        SetText(session, table, columns["FormatsJson"], clip.FormatsJson);
-        SetText(session, table, columns["SourceApp"], clip.SourceApp);
-        SetText(session, table, columns["FormatLabel"], clip.FormatLabel);
-        Api.SetColumn(session, table, columns["CopiedAt"], clip.CopiedAt.UtcTicks);
-        Api.SetColumn(session, table, columns["IsPinned"], clip.IsPinned);
-        Api.SetColumn(session, table, columns["UseCount"], clip.UseCount);
-        update.Save();
-        transaction.Commit(CommitTransactionGrbit.LazyFlush);
+            using var transaction = new Transaction(session);
+            using var update = new Update(session, table, JET_prep.Insert);
+            SetText(session, table, columns["Id"], clip.Id);
+            SetText(session, table, columns["Kind"], clip.Kind.ToString());
+            SetText(session, table, columns["Title"], clip.Title);
+            SetText(session, table, columns["Preview"], clip.Preview);
+            SetText(session, table, columns["ContentText"], clip.ContentText);
+            SetBytes(session, table, columns["ContentBytes"], clip.ContentBytes);
+            SetText(session, table, columns["ReferencePath"], clip.ReferencePath);
+            SetText(session, table, columns["FormatsJson"], clip.FormatsJson);
+            SetText(session, table, columns["SourceApp"], clip.SourceApp);
+            SetText(session, table, columns["SourceWindowTitle"], clip.SourceWindowTitle);
+            SetText(session, table, columns["BrowserTabTitle"], clip.BrowserTabTitle);
+            SetText(session, table, columns["SourceUrl"], clip.SourceUrl);
+            SetText(session, table, columns["SourceDomain"], clip.SourceDomain);
+            SetText(session, table, columns["FormatLabel"], clip.FormatLabel);
+            Api.SetColumn(session, table, columns["CopiedAt"], clip.CopiedAt.UtcTicks);
+            Api.SetColumn(session, table, columns["IsPinned"], clip.IsPinned);
+            Api.SetColumn(session, table, columns["UseCount"], clip.UseCount);
+            update.Save();
+            transaction.Commit(CommitTransactionGrbit.LazyFlush);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task SetPinnedAsync(string id, bool isPinned, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            using var session = new Session(_instance);
+            var dbid = OpenDatabase(session);
+            using var table = new Table(session, dbid, TableName, OpenTableGrbit.None);
+            var columns = Columns(session, table);
+
+            Api.JetSetCurrentIndex(session, table, "primary");
+            Api.MakeKey(session, table, id, Encoding.Unicode, MakeKeyGrbit.NewKey);
+            if (!Api.TrySeek(session, table, SeekGrbit.SeekEQ))
+            {
+                return;
+            }
+
+            using var transaction = new Transaction(session);
+            using var update = new Update(session, table, JET_prep.Replace);
+            Api.SetColumn(session, table, columns["IsPinned"], isPinned);
+            update.Save();
+            transaction.Commit(CommitTransactionGrbit.LazyFlush);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task DeleteAsync(string id, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            using var session = new Session(_instance);
+            var dbid = OpenDatabase(session);
+            using var table = new Table(session, dbid, TableName, OpenTableGrbit.None);
+
+            Api.JetSetCurrentIndex(session, table, "primary");
+            Api.MakeKey(session, table, id, Encoding.Unicode, MakeKeyGrbit.NewKey);
+            if (!Api.TrySeek(session, table, SeekGrbit.SeekEQ))
+            {
+                return;
+            }
+
+            using var transaction = new Transaction(session);
+            Api.JetDelete(session, table);
+            transaction.Commit(CommitTransactionGrbit.LazyFlush);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     private static IDictionary<string, JET_COLUMNID> Columns(Session session, JET_TABLEID table) =>
@@ -287,6 +359,10 @@ public sealed class EsentClipboardHistoryService : IClipboardHistoryService, IDi
             ReferencePath = GetText(session, table, columns["ReferencePath"]),
             FormatsJson = GetText(session, table, columns["FormatsJson"]),
             SourceApp = GetText(session, table, columns["SourceApp"]),
+            SourceWindowTitle = GetOptionalText(session, table, columns, "SourceWindowTitle"),
+            BrowserTabTitle = GetOptionalText(session, table, columns, "BrowserTabTitle"),
+            SourceUrl = GetOptionalText(session, table, columns, "SourceUrl"),
+            SourceDomain = GetOptionalText(session, table, columns, "SourceDomain"),
             FormatLabel = GetText(session, table, columns["FormatLabel"]),
             CopiedAt = new DateTimeOffset(copiedAtTicks, TimeSpan.Zero).ToLocalTime(),
             IsPinned = Api.RetrieveColumnAsBoolean(session, table, columns["IsPinned"]) ?? false,
@@ -304,6 +380,9 @@ public sealed class EsentClipboardHistoryService : IClipboardHistoryService, IDi
 
     private static string? GetText(Session session, JET_TABLEID table, JET_COLUMNID column) =>
         Api.RetrieveColumnAsString(session, table, column, Encoding.Unicode);
+
+    private static string? GetOptionalText(Session session, JET_TABLEID table, IDictionary<string, JET_COLUMNID> columns, string columnName) =>
+        columns.TryGetValue(columnName, out var column) ? GetText(session, table, column) : null;
 
     private static void SetBytes(Session session, JET_TABLEID table, JET_COLUMNID column, byte[]? value)
     {
@@ -330,169 +409,4 @@ public sealed class EsentClipboardHistoryService : IClipboardHistoryService, IDi
         return count;
     }
 
-    private static class ClipboardClipFactory
-    {
-        public static async Task<ClipboardClip?> FromClipboardAsync(CancellationToken cancellationToken)
-        {
-            DataPackageView view;
-            try
-            {
-                view = Clipboard.GetContent();
-            }
-            catch
-            {
-                return null;
-            }
-
-            var formats = view.AvailableFormats.ToArray();
-            if (formats.Length == 0)
-            {
-                return null;
-            }
-
-            var copiedAt = DateTimeOffset.Now;
-            var formatsJson = JsonSerializer.Serialize(formats);
-            var fileClip = await TryCreateStorageItemClipAsync(view, formatsJson, copiedAt);
-            if (fileClip is not null)
-            {
-                return fileClip;
-            }
-
-            if (view.Contains(StandardDataFormats.Bitmap))
-            {
-                var imageBytes = await ReadBitmapAsync(view);
-                if (imageBytes is not null)
-                {
-                    return BuildClip(ClipKind.Image, "Clipboard image", "Bitmap image captured from clipboard", "Bitmap image", null, imageBytes, null, formatsJson, copiedAt);
-                }
-            }
-
-            if (view.Contains(StandardDataFormats.Text))
-            {
-                var text = await view.GetTextAsync().AsTask(cancellationToken);
-                var kind = DetectTextKind(text);
-                return BuildClip(kind, TitleFromText(text, kind), PreviewText(text), LabelForText(kind, text), text, null, null, formatsJson, copiedAt);
-            }
-
-            if (view.Contains(StandardDataFormats.Html))
-            {
-                var html = await view.GetHtmlFormatAsync().AsTask(cancellationToken);
-                return BuildClip(ClipKind.Html, "HTML fragment", PreviewText(HtmlFormatHelper.GetStaticFragment(html)), "HTML", html, null, null, formatsJson, copiedAt);
-            }
-
-            return BuildClip(ClipKind.Other, "Clipboard data", string.Join(", ", formats), "Reference formats", null, null, null, formatsJson, copiedAt);
-        }
-
-        private static async Task<ClipboardClip?> TryCreateStorageItemClipAsync(DataPackageView view, string formatsJson, DateTimeOffset copiedAt)
-        {
-            if (!view.Contains(StandardDataFormats.StorageItems))
-            {
-                return null;
-            }
-
-            var items = await view.GetStorageItemsAsync();
-            var paths = items
-                .Select(item => item is StorageFile file ? file.Path : item.Path)
-                .Where(path => !string.IsNullOrWhiteSpace(path))
-                .ToArray();
-
-            if (paths.Length == 0)
-            {
-                return null;
-            }
-
-            var firstPath = paths[0];
-            var kind = IsVideo(firstPath) ? ClipKind.Video : ClipKind.File;
-            var title = paths.Length == 1 ? Path.GetFileName(firstPath) : $"{paths.Length} files";
-            return BuildClip(kind, title, string.Join(Environment.NewLine, paths), paths.Length == 1 ? "File reference" : "File references", null, null, string.Join(Environment.NewLine, paths), formatsJson, copiedAt);
-        }
-
-        private static async Task<byte[]?> ReadBitmapAsync(DataPackageView view)
-        {
-            var reference = await view.GetBitmapAsync();
-            await using var stream = (await reference.OpenReadAsync()).AsStreamForRead();
-            using var memory = new MemoryStream();
-            await stream.CopyToAsync(memory);
-            return memory.ToArray();
-        }
-
-        private static ClipboardClip BuildClip(
-            ClipKind kind,
-            string title,
-            string preview,
-            string formatLabel,
-            string? contentText,
-            byte[]? contentBytes,
-            string? referencePath,
-            string formatsJson,
-            DateTimeOffset copiedAt)
-        {
-            var hashInput = $"{kind}|{contentText}|{referencePath}|{preview}|{Convert.ToBase64String(SHA256.HashData(contentBytes ?? []))}";
-            var id = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(hashInput)));
-            return new ClipboardClip
-            {
-                Id = id,
-                Kind = kind,
-                Title = title,
-                Preview = preview,
-                ContentText = contentText,
-                ContentBytes = contentBytes,
-                ReferencePath = referencePath,
-                FormatsJson = formatsJson,
-                FormatLabel = formatLabel,
-                CopiedAt = copiedAt
-            };
-        }
-
-        private static ClipKind DetectTextKind(string text)
-        {
-            if (Uri.TryCreate(text.Trim(), UriKind.Absolute, out _))
-            {
-                return ClipKind.Url;
-            }
-
-            var trimmed = text.TrimStart();
-            if (trimmed.StartsWith("using ", StringComparison.Ordinal) ||
-                trimmed.StartsWith("const ", StringComparison.Ordinal) ||
-                trimmed.StartsWith("function ", StringComparison.Ordinal) ||
-                trimmed.Contains("=>", StringComparison.Ordinal) ||
-                trimmed.Contains("{", StringComparison.Ordinal) && trimmed.Contains(";", StringComparison.Ordinal))
-            {
-                return ClipKind.Code;
-            }
-
-            return ClipKind.Text;
-        }
-
-        private static string TitleFromText(string text, ClipKind kind)
-        {
-            var firstLine = text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
-            if (string.IsNullOrWhiteSpace(firstLine))
-            {
-                return kind == ClipKind.Url ? "URL" : "Text";
-            }
-
-            return firstLine.Length <= 80 ? firstLine : $"{firstLine[..77]}...";
-        }
-
-        private static string PreviewText(string text)
-        {
-            var compact = string.Join(" ", text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Select(line => line.Trim()));
-            return compact.Length <= 240 ? compact : $"{compact[..237]}...";
-        }
-
-        private static string LabelForText(ClipKind kind, string text) =>
-            kind switch
-            {
-                ClipKind.Url => "URL",
-                ClipKind.Code => $"Code - {text.Split('\n').Length} lines",
-                _ => "Plain text"
-            };
-
-        private static bool IsVideo(string path)
-        {
-            var extension = Path.GetExtension(path).ToLowerInvariant();
-            return extension is ".mp4" or ".mov" or ".mkv" or ".avi" or ".webm" or ".wmv";
-        }
-    }
 }
