@@ -180,6 +180,13 @@ public sealed partial class MainWindow : Window
 
     private void SearchBox_KeyDown(object sender, KeyRoutedEventArgs e)
     {
+        if (e.Key == VirtualKey.Escape)
+        {
+            HideMainWindow();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key is VirtualKey.Down or VirtualKey.Up)
         {
             MoveSelection(e.Key == VirtualKey.Down ? 1 : -1);
@@ -323,7 +330,7 @@ public sealed partial class MainWindow : Window
 
     private void TryHandleActiveWindowHotKeys(KeyRoutedEventArgs e)
     {
-        if (e.Handled)
+        if (e.Handled || _hotKeyService.IsConfigurationCaptureActive)
         {
             return;
         }
@@ -1409,8 +1416,7 @@ public sealed partial class MainWindow : Window
         var selected = _viewModel.SelectedClip;
         if (selected is null)
         {
-            ShowTextPreview();
-            SelectedPreviewTextBlock.Text = string.Empty;
+            ShowTextPreview(string.Empty);
             return;
         }
 
@@ -1427,7 +1433,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        ShowTextPreview();
+        ShowTextPreview(GetDisplayText(selected));
     }
 
     private async Task ShowImagePreviewAsync(ClipboardClip clip)
@@ -1440,7 +1446,7 @@ public sealed partial class MainWindow : Window
 
         if (bitmap is null)
         {
-            ShowTextPreview();
+            ShowTextPreview(GetDisplayText(clip));
             return;
         }
 
@@ -1459,14 +1465,18 @@ public sealed partial class MainWindow : Window
         SelectedPreviewFileScrollViewer.Visibility = Visibility.Visible;
     }
 
-    private void ShowTextPreview()
+    private void ShowTextPreview(string text)
     {
+        SelectedPreviewTextBlock.Text = text;
         SelectedPreviewImage.Source = null;
         SelectedPreviewFileTextBlock.Text = string.Empty;
         SelectedPreviewImageScrollViewer.Visibility = Visibility.Collapsed;
         SelectedPreviewFileScrollViewer.Visibility = Visibility.Collapsed;
         PreviewScrollViewer.Visibility = Visibility.Visible;
     }
+
+    private static string GetDisplayText(ClipboardClip clip) =>
+        !string.IsNullOrWhiteSpace(clip.ContentText) ? clip.DisplayContent : clip.Preview ?? string.Empty;
 
     private async Task<BitmapImage?> GetOrCreateBitmapImageAsync(ClipboardClip clip)
     {

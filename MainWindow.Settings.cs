@@ -50,7 +50,7 @@ public sealed partial class MainWindow
 
         var captureHint = new TextBlock
         {
-            Text = "Click Set, then press shortcut.",
+            Text = "Click Set or the shortcut box, then press shortcut.",
             Foreground = Application.Current.Resources["TextFillColorSecondaryBrush"] as Microsoft.UI.Xaml.Media.Brush
         };
 
@@ -91,42 +91,6 @@ public sealed partial class MainWindow
         Grid.SetRow(rowsPanel, 2);
         contentRoot.Children.Add(rowsPanel);
 
-        contentRoot.KeyDown += (_, e) =>
-        {
-            if (captureTarget is null)
-            {
-                return;
-            }
-
-            if (e.Key is VirtualKey.Control or VirtualKey.Menu or VirtualKey.Shift or VirtualKey.LeftWindows or VirtualKey.RightWindows)
-            {
-                e.Handled = true;
-                return;
-            }
-
-            if (!bindings.TryGetValue(captureTarget, out var binding))
-            {
-                captureTarget = null;
-                return;
-            }
-
-            if (e.Key == VirtualKey.Escape)
-            {
-                binding.Modifier = string.Empty;
-                binding.Key = string.Empty;
-            }
-            else
-            {
-                binding.Modifier = ModifierFlagsToString(GetCurrentModifierFlags());
-                binding.Key = VirtualKeyToHotKeyString(e.Key);
-            }
-
-            displayBoxes[captureTarget].Text = binding.ToString();
-            captureHint.Text = "Click Set, then press shortcut.";
-            captureTarget = null;
-            e.Handled = true;
-        };
-
         AddHotKeyRow(rowsPanel, "Open/Toggle Window", "toggle_window");
         AddHotKeyRow(rowsPanel, "Show/Hide Details Panel", "toggle_right_panel");
         AddHotKeyRow(rowsPanel, "Paste Selected Clip", "paste_selected");
@@ -153,8 +117,11 @@ public sealed partial class MainWindow
 
         if (await dialog.ShowAsync() != ContentDialogResult.Primary)
         {
+            StopCaptureMode();
             return;
         }
+
+        StopCaptureMode();
 
         _hotKeySettings = new HotKeySettings
         {
@@ -199,6 +166,8 @@ public sealed partial class MainWindow
                 IsReadOnly = true,
                 Width = 260
             };
+            valueBox.PointerPressed += (_, _) => StartCaptureMode(id, label);
+            valueBox.GotFocus += (_, _) => StartCaptureMode(id, label);
             left.Children.Add(valueBox);
             displayBoxes[id] = valueBox;
             row.Children.Add(left);
@@ -208,12 +177,7 @@ public sealed partial class MainWindow
                 Content = "Set",
                 VerticalAlignment = VerticalAlignment.Bottom
             };
-            setButton.Click += (_, _) =>
-            {
-                captureTarget = id;
-                captureHint.Text = $"Press new shortcut for {label} (Esc to clear).";
-                _ = contentRoot.Focus(FocusState.Programmatic);
-            };
+            setButton.Click += (_, _) => StartCaptureMode(id, label);
             Grid.SetColumn(setButton, 1);
             row.Children.Add(setButton);
 
@@ -227,8 +191,10 @@ public sealed partial class MainWindow
                 bindings[id].Modifier = string.Empty;
                 bindings[id].Key = string.Empty;
                 displayBoxes[id].Text = "None";
-                captureTarget = null;
-                captureHint.Text = "Click Set, then press shortcut.";
+                if (captureTarget == id)
+                {
+                    StopCaptureMode();
+                }
             };
             Grid.SetColumn(clearButton, 2);
             row.Children.Add(clearButton);
@@ -245,6 +211,32 @@ public sealed partial class MainWindow
             row.Children.Add(globalCheckBox);
 
             panel.Children.Add(row);
+        }
+
+        void StartCaptureMode(string id, string label)
+        {
+            captureTarget = id;
+            captureHint.Text = $"Press new shortcut for {label} (Esc to clear).";
+            _ = contentRoot.Focus(FocusState.Programmatic);
+            _hotKeyService.BeginConfigurationCapture(capturedBinding =>
+            {
+                if (captureTarget is null || !bindings.TryGetValue(captureTarget, out var binding))
+                {
+                    return;
+                }
+
+                binding.Modifier = capturedBinding.Modifier;
+                binding.Key = capturedBinding.Key;
+                displayBoxes[captureTarget].Text = binding.ToString();
+                StopCaptureMode();
+            });
+        }
+
+        void StopCaptureMode()
+        {
+            captureTarget = null;
+            captureHint.Text = "Click Set or the shortcut box, then press shortcut.";
+            _hotKeyService.EndConfigurationCapture();
         }
     }
 

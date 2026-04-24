@@ -35,8 +35,30 @@ public sealed class ClipboardClip
         }
     }
 
-    public string DisplayContent => !string.IsNullOrWhiteSpace(ContentText) ? ContentText : Preview;
+    public string DisplayContent => SanitizeForDisplay(!string.IsNullOrWhiteSpace(ContentText) ? ContentText : Preview);
 
     public string Metadata =>
         string.Join(" - ", new[] { FormatLabel, SourceApp, SourceDomain, RelativeTime }.Where(value => !string.IsNullOrWhiteSpace(value)));
+
+    private static string SanitizeForDisplay(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return string.Empty;
+        }
+
+        // XAML text controls can render poorly with embedded control characters.
+        Span<char> buffer = text.Length <= 4096 ? stackalloc char[text.Length] : new char[text.Length];
+        var written = 0;
+
+        foreach (var ch in text)
+        {
+            if (ch == '\r' || ch == '\n' || ch == '\t' || !char.IsControl(ch))
+            {
+                buffer[written++] = ch;
+            }
+        }
+
+        return written == text.Length ? text : new string(buffer[..written]);
+    }
 }
