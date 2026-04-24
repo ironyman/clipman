@@ -136,6 +136,7 @@ public sealed class MainViewModel : ObservableObject
             _loadedCount = 0;
             HasMore = true;
             VisibleClips.Clear();
+            SelectedClip = null;
             await LoadPageAsync();
         }
         finally
@@ -174,22 +175,31 @@ public sealed class MainViewModel : ObservableObject
 
     private async Task LoadPageAsync()
     {
-        var page = await _clipboardHistoryService.GetPageAsync(
+        var sourcePage = await _clipboardHistoryService.GetPageAsync(
             _loadedCount,
             PageSize,
             SearchQuery,
             SelectedKind,
             ShowPinnedOnly);
+        var isSearching = !string.IsNullOrWhiteSpace(SearchQuery);
+        var page = sourcePage.ToList();
 
         foreach (var clip in page)
         {
             VisibleClips.Add(clip);
         }
 
-        _loadedCount += page.Count;
-        HasMore = page.Count >= PageSize;
+        _loadedCount += sourcePage.Count;
+        HasMore = sourcePage.Count >= PageSize;
         ReorderVisibleClips();
-        SelectedClip ??= VisibleClips.FirstOrDefault();
+        if (_loadedCount <= sourcePage.Count || isSearching)
+        {
+            SelectedClip = VisibleClips.FirstOrDefault();
+        }
+        else
+        {
+            SelectedClip ??= VisibleClips.FirstOrDefault();
+        }
         PinnedCount = VisibleClips.Count(clip => clip.IsPinned);
     }
 
@@ -213,6 +223,11 @@ public sealed class MainViewModel : ObservableObject
         SavedCount++;
 
         if (_suppressRealtimeClipInsert)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(SearchQuery))
         {
             return;
         }

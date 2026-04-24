@@ -33,6 +33,8 @@ public sealed class ClipboardClip
         }
     }
 
+    public string DisplayContent => !string.IsNullOrWhiteSpace(ContentText) ? ContentText : Preview;
+
     public string Metadata =>
         string.Join(" - ", new[] { FormatLabel, SourceApp, SourceDomain, RelativeTime }.Where(value => !string.IsNullOrWhiteSpace(value)));
 }

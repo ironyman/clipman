@@ -5,13 +5,13 @@ namespace Clipman.Services;
 
 public sealed class GlobalHotKeyService : IDisposable
 {
-    private const int HotKeyId = 0x434D;
+    private const int HotKeyBaseId = 0x434D;
     private const int GwlWndProc = -4;
     private const int WmHotKey = 0x0312;
     private readonly IntPtr _hwnd;
     private readonly WndProc _newWndProc;
+    private readonly Dictionary<int, HotKeyAction> _registeredActions = [];
     private IntPtr _oldWndProc;
-    private bool _registered;
     private bool _disposed;
 
     public GlobalHotKeyService(IntPtr hwnd)
@@ -21,31 +21,38 @@ public sealed class GlobalHotKeyService : IDisposable
         _oldWndProc = SetWindowLongPtr(_hwnd, GwlWndProc, Marshal.GetFunctionPointerForDelegate(_newWndProc));
     }
 
-    public event EventHandler? Pressed;
+    public event EventHandler<HotKeyAction>? Pressed;
     public event Func<uint, IntPtr, IntPtr, bool>? WindowMessageReceived;
 
     public bool Register(HotKeySettings settings)
     {
         Unregister();
 
-        var modifiers = ParseModifiers(settings.Modifier);
-        var key = ParseKey(settings.Key);
-        if (modifiers == 0 || key == 0)
+        var succeeded = true;
+        succeeded &= TryRegisterBinding(HotKeyAction.ToggleWindow, settings.ToggleWindow);
+
+        for (var i = 0; i < 9; i++)
         {
-            return false;
+            if (i >= settings.PasteRecent.Count)
+            {
+                break;
+            }
+
+            var action = (HotKeyAction)((int)HotKeyAction.PasteRecent1 + i);
+            succeeded &= TryRegisterBinding(action, settings.PasteRecent[i]);
         }
 
-        _registered = RegisterHotKey(_hwnd, HotKeyId, modifiers, key);
-        return _registered;
+        return succeeded;
     }
 
     public void Unregister()
     {
-        if (_registered)
+        foreach (var id in _registeredActions.Keys.ToArray())
         {
-            UnregisterHotKey(_hwnd, HotKeyId);
-            _registered = false;
+            UnregisterHotKey(_hwnd, id);
         }
+
+        _registeredActions.Clear();
     }
 
     public void Dispose()
@@ -71,9 +78,9 @@ public sealed class GlobalHotKeyService : IDisposable
             return IntPtr.Zero;
         }
 
-        if (msg == WmHotKey && wParam.ToInt32() == HotKeyId)
+        if (msg == WmHotKey && _registeredActions.TryGetValue(wParam.ToInt32(), out var action))
         {
-            Pressed?.Invoke(this, EventArgs.Empty);
+            Pressed?.Invoke(this, action);
             return IntPtr.Zero;
         }
 
@@ -100,6 +107,11 @@ public sealed class GlobalHotKeyService : IDisposable
 
     private static uint ParseKey(string key)
     {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return 0;
+        }
+
         key = key.Trim().ToUpperInvariant();
         if (key.Length == 1 && key[0] is >= 'A' and <= 'Z' or >= '0' and <= '9')
         {
@@ -115,9 +127,29 @@ public sealed class GlobalHotKeyService : IDisposable
         {
             "SPACE" => 0x20,
             "TAB" => 0x09,
+            "ENTER" => 0x0D,
             "ESC" or "ESCAPE" => 0x1B,
             _ => 0
         };
+    }
+
+    private bool TryRegisterBinding(HotKeyAction action, HotKeyBinding binding)
+    {
+        var modifiers = ParseModifiers(binding.Modifier);
+        var key = ParseKey(binding.Key);
+        if (modifiers == 0 || key == 0)
+        {
+            return false;
+        }
+
+        var id = HotKeyBaseId + (int)action;
+        if (!RegisterHotKey(_hwnd, id, modifiers, key))
+        {
+            return false;
+        }
+
+        _registeredActions[id] = action;
+        return true;
     }
 
     private static IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr newProc) =>

@@ -277,7 +277,7 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
             Api.SetColumn(session, table, columns["IsPinned"], clip.IsPinned);
             Api.SetColumn(session, table, columns["UseCount"], clip.UseCount);
             update.Save();
-            transaction.Commit(CommitTransactionGrbit.LazyFlush);
+            transaction.Commit(CommitTransactionGrbit.None);
         }
         finally
         {
@@ -306,7 +306,7 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
             using var update = new Update(session, table, JET_prep.Replace);
             Api.SetColumn(session, table, columns["IsPinned"], isPinned);
             update.Save();
-            transaction.Commit(CommitTransactionGrbit.LazyFlush);
+            transaction.Commit(CommitTransactionGrbit.None);
         }
         finally
         {
@@ -332,7 +332,7 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
 
             using var transaction = new Transaction(session);
             Api.JetDelete(session, table);
-            transaction.Commit(CommitTransactionGrbit.LazyFlush);
+            transaction.Commit(CommitTransactionGrbit.None);
         }
         finally
         {
@@ -363,7 +363,7 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
             SetText(session, table, columns["Preview"], preview);
             SetText(session, table, columns["ContentText"], contentText);
             update.Save();
-            transaction.Commit(CommitTransactionGrbit.LazyFlush);
+            transaction.Commit(CommitTransactionGrbit.None);
         }
         finally
         {

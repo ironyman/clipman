@@ -5,8 +5,10 @@
     xmlns:converters="using:Clipman.Converters"
     xmlns:models="using:Clipman.Models"
     Title="Clipman">
-
     <Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <Grid.KeyboardAccelerators>
+            <KeyboardAccelerator Key="L" Modifiers="Control" Invoked="FocusSearchAccelerator_Invoked" />
+        </Grid.KeyboardAccelerators>
         <Grid.Resources>
             <converters:ClipKindToIconGlyphConverter x:Key="KindIconConverter" />
             <converters:PinnedGlyphConverter x:Key="PinnedGlyphConverter" />
@@ -87,6 +89,7 @@
                         x:Name="SearchBox"
                         QueryIcon="Find"
                         PlaceholderText="Search clipboard history"
+                        KeyDown="SearchBox_KeyDown"
                         Text="{Binding SearchQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
                     <Button Grid.Column="1" ToolTipService.ToolTip="Advanced search">
@@ -114,6 +117,8 @@
                     SelectedItem="{Binding SelectedClip, Mode=TwoWay}"
                     SelectionMode="Single"
                     SelectionChanged="HistoryListView_SelectionChanged"
+                    KeyDown="HistoryListView_KeyDown"
+                    ContainerContentChanging="HistoryListView_ContainerContentChanging"
                     Loaded="HistoryListView_Loaded">
                     <ListView.ItemContainerStyle>
                         <Style TargetType="ListViewItem">
@@ -155,6 +160,14 @@
                                     FontSize="13"
                                     Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                                     VerticalAlignment="Top" />
+                                <TextBlock
+                                    x:Name="SlotHintTextBlock"
+                                    Grid.Column="2"
+                                    Margin="0,18,0,0"
+                                    FontSize="10"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    HorizontalAlignment="Right"
+                                    Visibility="Collapsed" />
                             </Grid>
                         </DataTemplate>
                     </ListView.ItemTemplate>
@@ -216,7 +229,7 @@
                             <ScrollViewer x:Name="PreviewScrollViewer">
                                 <TextBlock
                                     x:Name="SelectedPreviewTextBlock"
-                                    Text="{Binding SelectedClip.Preview}"
+                                    Text="{Binding SelectedClip.DisplayContent}"
                                     FontSize="15"
                                     TextWrapping="Wrap"
                                     IsTextSelectionEnabled="True" />

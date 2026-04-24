@@ -49,8 +49,95 @@ public sealed class AppSettingsService
             return new HotKeySettings();
         }
 
-        settings.Modifier = string.IsNullOrWhiteSpace(settings.Modifier) ? "Control+Shift" : settings.Modifier;
-        settings.Key = string.IsNullOrWhiteSpace(settings.Key) ? "V" : settings.Key.Trim().ToUpperInvariant();
+        // Migrate legacy settings format.
+        if (string.IsNullOrWhiteSpace(settings.ToggleWindow.Key))
+        {
+            settings.ToggleWindow.Modifier = string.IsNullOrWhiteSpace(settings.Modifier) ? "Control+Shift" : settings.Modifier.Trim();
+            settings.ToggleWindow.Key = string.IsNullOrWhiteSpace(settings.Key) ? "V" : settings.Key.Trim();
+        }
+
+        settings.ToggleWindow = NormalizeBinding(settings.ToggleWindow, "Control+Shift", "V");
+        settings.PasteSelected = NormalizeBinding(settings.PasteSelected, string.Empty, "Enter");
+        settings.TogglePin = NormalizeBinding(settings.TogglePin, "Control", "P");
+
+        if (settings.PasteRecent is null || settings.PasteRecent.Count != 9)
+        {
+            settings.PasteRecent = Enumerable.Range(1, 9)
+                .Select(index => new HotKeyBinding
+                {
+                    Modifier = "Alt",
+                    Key = index.ToString()
+                })
+                .ToList();
+        }
+
+        for (var i = 0; i < settings.PasteRecent.Count; i++)
+        {
+            settings.PasteRecent[i] = NormalizeBinding(settings.PasteRecent[i], "Alt", (i + 1).ToString());
+        }
+
+        // Keep legacy fields in sync for backwards compatibility.
+        settings.Modifier = settings.ToggleWindow.Modifier;
+        settings.Key = settings.ToggleWindow.Key;
         return settings;
+    }
+
+    private static HotKeyBinding NormalizeBinding(HotKeyBinding? binding, string defaultModifier, string defaultKey)
+    {
+        var normalized = binding ?? new HotKeyBinding
+        {
+            Modifier = defaultModifier,
+            Key = defaultKey
+        };
+        normalized.Modifier = normalized.Modifier?.Trim() ?? string.Empty;
+        normalized.Key = normalized.Key?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalized.Key))
+        {
+            return normalized;
+        }
+
+        if (string.IsNullOrWhiteSpace(normalized.Modifier) && !string.IsNullOrWhiteSpace(defaultModifier) && string.Equals(normalized.Key, defaultKey, StringComparison.OrdinalIgnoreCase))
+        {
+            normalized.Modifier = defaultModifier;
+        }
+
+        normalized.Key = NormalizeKey(normalized.Key);
+        normalized.Modifier = NormalizeModifier(normalized.Modifier);
+        return normalized;
+    }
+
+    private static string NormalizeKey(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return string.Empty;
+        }
+
+        key = key.Trim();
+        return key.Length == 1 ? key.ToUpperInvariant() : key;
+    }
+
+    private static string NormalizeModifier(string modifier)
+    {
+        if (string.IsNullOrWhiteSpace(modifier))
+        {
+            return string.Empty;
+        }
+
+        var parts = modifier
+            .Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(part => part.ToLowerInvariant() switch
+            {
+                "ctrl" => "Control",
+                "control" => "Control",
+                "alt" => "Alt",
+                "shift" => "Shift",
+                "win" => "Win",
+                "windows" => "Win",
+                _ => part
+            })
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        return string.Join('+', parts);
     }
 }
