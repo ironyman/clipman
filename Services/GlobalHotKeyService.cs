@@ -8,20 +8,11 @@ public sealed class GlobalHotKeyService : IDisposable
     private const int HotKeyBaseId = 0x434D;
     private const int GwlWndProc = -4;
     private const int WmHotKey = 0x0312;
-    private const uint WmKeyDown = 0x0100;
-    private const uint WmSysKeyDown = 0x0104;
-    private const uint VkShift = 0x10;
-    private const uint VkControl = 0x11;
-    private const uint VkMenu = 0x12;
-    private const uint VkLWin = 0x5B;
-    private const uint VkRWin = 0x5C;
-    private const uint VkEscape = 0x1B;
     private readonly IntPtr _hwnd;
     private readonly WndProc _newWndProc;
     private readonly Dictionary<int, HotKeyAction> _registeredActions = [];
     private IntPtr _oldWndProc;
     private HotKeySettings? _activeSettings;
-    private Action<HotKeyBinding>? _captureCallback;
     private bool _disposed;
     private bool _isConfigurationCaptureActive;
 
@@ -47,14 +38,13 @@ public sealed class GlobalHotKeyService : IDisposable
         return RegisterCore(_activeSettings);
     }
 
-    public bool BeginConfigurationCapture(Action<HotKeyBinding> onCaptured)
+    public bool BeginConfigurationCapture()
     {
         if (_disposed)
         {
             return false;
         }
 
-        _captureCallback = onCaptured ?? throw new ArgumentNullException(nameof(onCaptured));
         if (_isConfigurationCaptureActive)
         {
             return true;
@@ -73,7 +63,6 @@ public sealed class GlobalHotKeyService : IDisposable
         }
 
         _isConfigurationCaptureActive = false;
-        _captureCallback = null;
 
         if (restoreRegisteredHotkeys && _activeSettings is not null)
         {
@@ -111,16 +100,6 @@ public sealed class GlobalHotKeyService : IDisposable
     {
         if (WindowMessageReceived?.Invoke(msg, wParam, lParam) == true)
         {
-            return IntPtr.Zero;
-        }
-
-        if (_isConfigurationCaptureActive && (msg == WmKeyDown || msg == WmSysKeyDown))
-        {
-            if (TryCreateCapturedBinding(wParam, out var binding))
-            {
-                _captureCallback?.Invoke(binding);
-            }
-
             return IntPtr.Zero;
         }
 
@@ -232,113 +211,6 @@ public sealed class GlobalHotKeyService : IDisposable
         return succeeded;
     }
 
-    private static bool TryCreateCapturedBinding(IntPtr wParam, out HotKeyBinding binding)
-    {
-        var virtualKey = unchecked((uint)wParam.ToInt64());
-        if (virtualKey == 0 || IsModifierVirtualKey(virtualKey))
-        {
-            binding = default!;
-            return false;
-        }
-
-        if (virtualKey == VkEscape)
-        {
-            binding = new HotKeyBinding
-            {
-                Modifier = string.Empty,
-                Key = string.Empty
-            };
-            return true;
-        }
-
-        var key = VirtualKeyToHotKeyString(virtualKey);
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            binding = default!;
-            return false;
-        }
-
-        binding = new HotKeyBinding
-        {
-            Modifier = ModifierFlagsToString(GetCurrentModifierFlags()),
-            Key = key
-        };
-        return true;
-    }
-
-    private static bool IsModifierVirtualKey(uint virtualKey) =>
-        virtualKey is VkShift or VkControl or VkMenu or VkLWin or VkRWin or 0xA0 or 0xA1 or 0xA2 or 0xA3 or 0xA4 or 0xA5;
-
-    private static int GetCurrentModifierFlags()
-    {
-        var value = 0;
-        if (IsVirtualKeyDown(VkControl))
-        {
-            value |= 1;
-        }
-
-        if (IsVirtualKeyDown(VkMenu))
-        {
-            value |= 2;
-        }
-
-        if (IsVirtualKeyDown(VkShift))
-        {
-            value |= 4;
-        }
-
-        if (IsVirtualKeyDown(VkLWin) || IsVirtualKeyDown(VkRWin))
-        {
-            value |= 8;
-        }
-
-        return value;
-    }
-
-    private static bool IsVirtualKeyDown(uint virtualKey) =>
-        (GetAsyncKeyState((int)virtualKey) & 0x8000) != 0;
-
-    private static string ModifierFlagsToString(int flags)
-    {
-        var parts = new List<string>(4);
-        if ((flags & 1) != 0) parts.Add("Control");
-        if ((flags & 2) != 0) parts.Add("Alt");
-        if ((flags & 4) != 0) parts.Add("Shift");
-        if ((flags & 8) != 0) parts.Add("Win");
-        return string.Join('+', parts);
-    }
-
-    private static string VirtualKeyToHotKeyString(uint virtualKey)
-    {
-        if (virtualKey is >= 0x30 and <= 0x39)
-        {
-            return ((char)virtualKey).ToString();
-        }
-
-        if (virtualKey is >= 0x41 and <= 0x5A)
-        {
-            return ((char)virtualKey).ToString();
-        }
-
-        if (virtualKey is >= 0x70 and <= 0x87)
-        {
-            return $"F{virtualKey - 0x70 + 1}";
-        }
-
-        return virtualKey switch
-        {
-            0x0D => "Enter",
-            0x20 => "Space",
-            0x09 => "Tab",
-            0x26 => "Up",
-            0x28 => "Down",
-            0x25 => "Left",
-            0x27 => "Right",
-            VkEscape => "Esc",
-            _ => string.Empty
-        };
-    }
-
     private static HotKeySettings CloneSettings(HotKeySettings settings) =>
         new()
         {
@@ -381,6 +253,4 @@ public sealed class GlobalHotKeyService : IDisposable
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr CallWindowProc(IntPtr lpPrevWndFunc, IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
-    [DllImport("user32.dll")]
-    private static extern short GetAsyncKeyState(int vKey);
 }

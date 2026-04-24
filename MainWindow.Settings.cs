@@ -91,6 +91,41 @@ public sealed partial class MainWindow
         Grid.SetRow(rowsPanel, 2);
         contentRoot.Children.Add(rowsPanel);
 
+        contentRoot.KeyDown += (_, e) =>
+        {
+            if (captureTarget is null)
+            {
+                return;
+            }
+
+            if (e.Key is VirtualKey.Control or VirtualKey.Menu or VirtualKey.Shift or VirtualKey.LeftWindows or VirtualKey.RightWindows)
+            {
+                e.Handled = true;
+                return;
+            }
+
+            if (!bindings.TryGetValue(captureTarget, out var binding))
+            {
+                StopCaptureMode();
+                return;
+            }
+
+            if (e.Key == VirtualKey.Escape)
+            {
+                binding.Modifier = string.Empty;
+                binding.Key = string.Empty;
+            }
+            else
+            {
+                binding.Modifier = ModifierFlagsToString(GetCurrentModifierFlags());
+                binding.Key = VirtualKeyToHotKeyString(e.Key);
+            }
+
+            displayBoxes[captureTarget].Text = binding.ToString();
+            StopCaptureMode();
+            e.Handled = true;
+        };
+
         AddHotKeyRow(rowsPanel, "Open/Toggle Window", "toggle_window");
         AddHotKeyRow(rowsPanel, "Show/Hide Details Panel", "toggle_right_panel");
         AddHotKeyRow(rowsPanel, "Paste Selected Clip", "paste_selected");
@@ -218,18 +253,7 @@ public sealed partial class MainWindow
             captureTarget = id;
             captureHint.Text = $"Press new shortcut for {label} (Esc to clear).";
             _ = contentRoot.Focus(FocusState.Programmatic);
-            _hotKeyService.BeginConfigurationCapture(capturedBinding =>
-            {
-                if (captureTarget is null || !bindings.TryGetValue(captureTarget, out var binding))
-                {
-                    return;
-                }
-
-                binding.Modifier = capturedBinding.Modifier;
-                binding.Key = capturedBinding.Key;
-                displayBoxes[captureTarget].Text = binding.ToString();
-                StopCaptureMode();
-            });
+            _hotKeyService.BeginConfigurationCapture();
         }
 
         void StopCaptureMode()
