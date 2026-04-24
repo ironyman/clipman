@@ -56,10 +56,10 @@ public sealed class AppSettingsService
             settings.ToggleWindow.Key = string.IsNullOrWhiteSpace(settings.Key) ? "V" : settings.Key.Trim();
         }
 
-        settings.ToggleWindow = NormalizeBinding(settings.ToggleWindow, "Control+Shift", "V");
-        settings.PasteSelected = NormalizeBinding(settings.PasteSelected, string.Empty, "Enter");
-        settings.TogglePin = NormalizeBinding(settings.TogglePin, "Control", "P");
-        settings.ToggleRightPanel = NormalizeBinding(settings.ToggleRightPanel, "Control", "E");
+        settings.ToggleWindow = NormalizeBinding(settings.ToggleWindow, "Control+Shift", "V", defaultIsGlobal: true);
+        settings.PasteSelected = NormalizeBinding(settings.PasteSelected, string.Empty, "Enter", defaultIsGlobal: false);
+        settings.TogglePin = NormalizeBinding(settings.TogglePin, "Control", "P", defaultIsGlobal: false);
+        settings.ToggleRightPanel = NormalizeBinding(settings.ToggleRightPanel, "Control", "E", defaultIsGlobal: false);
 
         if (settings.PasteRecent is null || settings.PasteRecent.Count != 9)
         {
@@ -67,14 +67,15 @@ public sealed class AppSettingsService
                 .Select(index => new HotKeyBinding
                 {
                     Modifier = "Alt",
-                    Key = index.ToString()
+                    Key = index.ToString(),
+                    IsGlobal = false
                 })
                 .ToList();
         }
 
         for (var i = 0; i < settings.PasteRecent.Count; i++)
         {
-            settings.PasteRecent[i] = NormalizeBinding(settings.PasteRecent[i], "Alt", (i + 1).ToString());
+            settings.PasteRecent[i] = NormalizeBinding(settings.PasteRecent[i], "Alt", (i + 1).ToString(), defaultIsGlobal: false);
         }
 
         // Keep legacy fields in sync for backwards compatibility.
@@ -83,15 +84,17 @@ public sealed class AppSettingsService
         return settings;
     }
 
-    private static HotKeyBinding NormalizeBinding(HotKeyBinding? binding, string defaultModifier, string defaultKey)
+    private static HotKeyBinding NormalizeBinding(HotKeyBinding? binding, string defaultModifier, string defaultKey, bool defaultIsGlobal)
     {
         var normalized = binding ?? new HotKeyBinding
         {
             Modifier = defaultModifier,
-            Key = defaultKey
+            Key = defaultKey,
+            IsGlobal = defaultIsGlobal
         };
         normalized.Modifier = normalized.Modifier?.Trim() ?? string.Empty;
         normalized.Key = normalized.Key?.Trim() ?? string.Empty;
+        normalized.IsGlobal ??= defaultIsGlobal;
         if (string.IsNullOrWhiteSpace(normalized.Key))
         {
             return normalized;

@@ -77,6 +77,7 @@ public sealed partial class MainWindow : Window
         AppWindow.Changed += AppWindow_Changed;
         DragRegion.SizeChanged += DragRegion_SizeChanged;
         SettingsButton.SizeChanged += SettingsButton_SizeChanged;
+        Root.KeyDown += Root_KeyDown;
         if (GetRightPanelToggleButton() is FrameworkElement rightPanelToggleButton)
         {
             rightPanelToggleButton.SizeChanged += RightPanelToggleButton_SizeChanged;
@@ -171,18 +172,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (MatchesBinding(e, _hotKeySettings.PasteSelected))
-        {
-            PasteClip_Click(this, new RoutedEventArgs());
-            e.Handled = true;
-            return;
-        }
-
-        if (MatchesBinding(e, _hotKeySettings.TogglePin))
-        {
-            TogglePin_Click(this, new RoutedEventArgs());
-            e.Handled = true;
-        }
+        TryHandleActiveWindowHotKeys(e);
     }
 
     private void HistoryListView_KeyDown(object sender, KeyRoutedEventArgs e)
@@ -194,17 +184,62 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (MatchesBinding(e, _hotKeySettings.PasteSelected))
+        TryHandleActiveWindowHotKeys(e);
+    }
+
+    private void Root_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        TryHandleActiveWindowHotKeys(e);
+    }
+
+    private void TryHandleActiveWindowHotKeys(KeyRoutedEventArgs e)
+    {
+        if (e.Handled)
+        {
+            return;
+        }
+
+        static bool IsLocalBinding(HotKeyBinding binding) => binding.IsGlobal != true;
+
+        if (IsLocalBinding(_hotKeySettings.ToggleWindow) && MatchesBinding(e, _hotKeySettings.ToggleWindow))
+        {
+            HandleHotKeyAction(HotKeyAction.ToggleWindow);
+            e.Handled = true;
+            return;
+        }
+
+        if (IsLocalBinding(_hotKeySettings.ToggleRightPanel) && MatchesBinding(e, _hotKeySettings.ToggleRightPanel))
+        {
+            _ = ToggleRightPanelAsync();
+            e.Handled = true;
+            return;
+        }
+
+        if (IsLocalBinding(_hotKeySettings.PasteSelected) && MatchesBinding(e, _hotKeySettings.PasteSelected))
         {
             PasteClip_Click(this, new RoutedEventArgs());
             e.Handled = true;
             return;
         }
 
-        if (MatchesBinding(e, _hotKeySettings.TogglePin))
+        if (IsLocalBinding(_hotKeySettings.TogglePin) && MatchesBinding(e, _hotKeySettings.TogglePin))
         {
             TogglePin_Click(this, new RoutedEventArgs());
             e.Handled = true;
+            return;
+        }
+
+        for (var i = 0; i < _hotKeySettings.PasteRecent.Count && i < RecentHotkeySlotCount; i++)
+        {
+            var binding = _hotKeySettings.PasteRecent[i];
+            if (!IsLocalBinding(binding) || !MatchesBinding(e, binding))
+            {
+                continue;
+            }
+
+            _ = PasteRecentSlotAsync(i + 1);
+            e.Handled = true;
+            return;
         }
     }
 
@@ -297,6 +332,12 @@ public sealed partial class MainWindow : Window
                 return;
             case HotKeyAction.ToggleRightPanel:
                 _ = ToggleRightPanelAsync();
+                return;
+            case HotKeyAction.PasteSelected:
+                PasteClip_Click(this, new RoutedEventArgs());
+                return;
+            case HotKeyAction.TogglePin:
+                TogglePin_Click(this, new RoutedEventArgs());
                 return;
         }
     }
@@ -707,6 +748,7 @@ public sealed partial class MainWindow : Window
         AppWindow.Changed -= AppWindow_Changed;
         DragRegion.SizeChanged -= DragRegion_SizeChanged;
         SettingsButton.SizeChanged -= SettingsButton_SizeChanged;
+        Root.KeyDown -= Root_KeyDown;
         if (GetRightPanelToggleButton() is FrameworkElement rightPanelToggleButton)
         {
             rightPanelToggleButton.SizeChanged -= RightPanelToggleButton_SizeChanged;
@@ -1010,6 +1052,7 @@ public sealed partial class MainWindow : Window
             ResizeWindowWidth(Math.Max(
                 _expandedWindowWidth,
                 GetMinimumWindowWidth() + DipToPhysicalPixels(DetailsColumnExpandedMinWidth + MainPaneExpandedColumnSpacing)));
+            CenterOnCurrentMonitorIfNotFullyVisible();
             RightPanelHost.Visibility = Visibility.Visible;
             Root.UpdateLayout();
             if (animate)

@@ -27,7 +27,7 @@ public sealed partial class MainWindow
         while (working.PasteRecent.Count < RecentHotkeySlotCount)
         {
             var idx = working.PasteRecent.Count + 1;
-            working.PasteRecent.Add(new HotKeyBinding { Modifier = "Alt", Key = idx.ToString() });
+            working.PasteRecent.Add(new HotKeyBinding { Modifier = "Alt", Key = idx.ToString(), IsGlobal = false });
         }
 
         var bindings = new Dictionary<string, HotKeyBinding>(StringComparer.Ordinal)
@@ -186,6 +186,7 @@ public sealed partial class MainWindow
                 {
                     new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
                     new ColumnDefinition { Width = GridLength.Auto },
+                    new ColumnDefinition { Width = GridLength.Auto },
                     new ColumnDefinition { Width = GridLength.Auto }
                 }
             };
@@ -232,6 +233,17 @@ public sealed partial class MainWindow
             Grid.SetColumn(clearButton, 2);
             row.Children.Add(clearButton);
 
+            var globalCheckBox = new CheckBox
+            {
+                Content = "Global",
+                VerticalAlignment = VerticalAlignment.Bottom,
+                IsChecked = bindings[id].IsGlobal == true
+            };
+            globalCheckBox.Checked += (_, _) => bindings[id].IsGlobal = true;
+            globalCheckBox.Unchecked += (_, _) => bindings[id].IsGlobal = false;
+            Grid.SetColumn(globalCheckBox, 3);
+            row.Children.Add(globalCheckBox);
+
             panel.Children.Add(row);
         }
     }
@@ -240,7 +252,8 @@ public sealed partial class MainWindow
         new()
         {
             Modifier = binding.Modifier,
-            Key = binding.Key
+            Key = binding.Key,
+            IsGlobal = binding.IsGlobal
         };
 
     private static bool IsStartupEnabled()

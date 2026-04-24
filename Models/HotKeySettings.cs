@@ -4,6 +4,7 @@ public sealed class HotKeyBinding
 {
     public string Modifier { get; set; } = string.Empty;
     public string Key { get; set; } = string.Empty;
+    public bool? IsGlobal { get; set; }
 
     public override string ToString()
     {
@@ -27,38 +28,42 @@ public sealed class HotKeySettings
     public HotKeyBinding ToggleWindow { get; set; } = new()
     {
         Modifier = "Control+Shift",
-        Key = "V"
+        Key = "V",
+        IsGlobal = true
     };
 
     public HotKeyBinding PasteSelected { get; set; } = new()
     {
         Modifier = string.Empty,
-        Key = "Enter"
+        Key = "Enter",
+        IsGlobal = false
     };
 
     public HotKeyBinding TogglePin { get; set; } = new()
     {
         Modifier = "Control",
-        Key = "P"
+        Key = "P",
+        IsGlobal = false
     };
 
     public HotKeyBinding ToggleRightPanel { get; set; } = new()
     {
         Modifier = "Control",
-        Key = "E"
+        Key = "E",
+        IsGlobal = false
     };
 
     public List<HotKeyBinding> PasteRecent { get; set; } =
     [
-        new() { Modifier = "Alt", Key = "1" },
-        new() { Modifier = "Alt", Key = "2" },
-        new() { Modifier = "Alt", Key = "3" },
-        new() { Modifier = "Alt", Key = "4" },
-        new() { Modifier = "Alt", Key = "5" },
-        new() { Modifier = "Alt", Key = "6" },
-        new() { Modifier = "Alt", Key = "7" },
-        new() { Modifier = "Alt", Key = "8" },
-        new() { Modifier = "Alt", Key = "9" }
+        new() { Modifier = "Alt", Key = "1", IsGlobal = false },
+        new() { Modifier = "Alt", Key = "2", IsGlobal = false },
+        new() { Modifier = "Alt", Key = "3", IsGlobal = false },
+        new() { Modifier = "Alt", Key = "4", IsGlobal = false },
+        new() { Modifier = "Alt", Key = "5", IsGlobal = false },
+        new() { Modifier = "Alt", Key = "6", IsGlobal = false },
+        new() { Modifier = "Alt", Key = "7", IsGlobal = false },
+        new() { Modifier = "Alt", Key = "8", IsGlobal = false },
+        new() { Modifier = "Alt", Key = "9", IsGlobal = false }
     ];
 
     public bool StartOnWindowsBoot { get; set; }

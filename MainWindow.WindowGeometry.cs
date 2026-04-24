@@ -82,6 +82,47 @@ public sealed partial class MainWindow
         return true;
     }
 
+    private void CenterOnCurrentMonitorIfNotFullyVisible()
+    {
+        var hwnd = WindowNative.GetWindowHandle(this);
+        if (hwnd == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var monitor = MonitorFromWindow(hwnd, MonitorDefaultToNearest);
+        if (monitor == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var info = new MonitorInfo { cbSize = (uint)Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(monitor, ref info))
+        {
+            return;
+        }
+
+        var size = AppWindow.Size;
+        if (size.Width <= 0 || size.Height <= 0)
+        {
+            return;
+        }
+
+        var position = AppWindow.Position;
+        var fitsHorizontally = position.X >= info.rcWork.Left && position.X + size.Width <= info.rcWork.Right;
+        var fitsVertically = position.Y >= info.rcWork.Top && position.Y + size.Height <= info.rcWork.Bottom;
+        if (fitsHorizontally && fitsVertically)
+        {
+            return;
+        }
+
+        var workWidth = info.rcWork.Right - info.rcWork.Left;
+        var workHeight = info.rcWork.Bottom - info.rcWork.Top;
+        var x = info.rcWork.Left + Math.Max(0, (workWidth - size.Width) / 2);
+        var y = info.rcWork.Top + Math.Max(0, (workHeight - size.Height) / 2);
+        AppWindow.Move(new Windows.Graphics.PointInt32(x, y));
+    }
+
     private static bool TryGetFocusCaretPoint(out GeometryPoint point)
     {
         point = default;

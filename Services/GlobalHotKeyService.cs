@@ -31,6 +31,8 @@ public sealed class GlobalHotKeyService : IDisposable
         var succeeded = true;
         succeeded &= TryRegisterBinding(HotKeyAction.ToggleWindow, settings.ToggleWindow);
         succeeded &= TryRegisterBinding(HotKeyAction.ToggleRightPanel, settings.ToggleRightPanel);
+        succeeded &= TryRegisterBinding(HotKeyAction.PasteSelected, settings.PasteSelected);
+        succeeded &= TryRegisterBinding(HotKeyAction.TogglePin, settings.TogglePin);
 
         for (var i = 0; i < 9; i++)
         {
@@ -136,6 +138,11 @@ public sealed class GlobalHotKeyService : IDisposable
 
     private bool TryRegisterBinding(HotKeyAction action, HotKeyBinding binding)
     {
+        if (binding.IsGlobal != true)
+        {
+            return true;
+        }
+
         var modifiers = ParseModifiers(binding.Modifier);
         var key = ParseKey(binding.Key);
         if (modifiers == 0 || key == 0)
