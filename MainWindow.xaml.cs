@@ -1,6 +1,7 @@
 using Clipman.Models;
 using Clipman.Services;
 using Clipman.ViewModels;
+using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -9,6 +10,7 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using Windows.Storage.Streams;
+using Windows.Graphics;
 using WinRT.Interop;
 using System.Runtime.InteropServices;
 
@@ -49,6 +51,7 @@ public sealed partial class MainWindow : Window
     private const uint CmExit = 0x1002;
     private const uint CmFirstClip = 0x2000;
     private const int MaxTrayClipItems = 12;
+    private const int SettingsToCaptionButtonsGap = 8;
 
     private readonly AppSettingsService _settingsService = new();
     private readonly EsentClipboardHistoryService _repository = new();
@@ -58,6 +61,7 @@ public sealed partial class MainWindow : Window
     private readonly GlobalHotKeyService _hotKeyService;
     private HotKeySettings _hotKeySettings;
     private ScrollViewer? _historyScrollViewer;
+    private InputNonClientPointerSource? _nonClientPointerSource;
     private bool _trayIconAdded;
     private FocusSnapshot _lastHotkeyFocus = FocusSnapshot.Empty;
     private bool _isExiting;
@@ -80,6 +84,7 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(DragRegion);
         TryEnableMica();
+        _nonClientPointerSource = InputNonClientPointerSource.GetForWindowId(AppWindow.Id);
 
         _hotKeyService = new GlobalHotKeyService(WindowNative.GetWindowHandle(this));
         _hotKeyService.Pressed += HotKeyService_Pressed;
@@ -88,7 +93,10 @@ public sealed partial class MainWindow : Window
         InitializeTrayIcon();
 
         AppWindow.Changed += AppWindow_Changed;
+        DragRegion.SizeChanged += DragRegion_SizeChanged;
+        SettingsButton.SizeChanged += SettingsButton_SizeChanged;
         UpdateTitleBarInsets();
+        UpdateTitleBarPassthroughRegions();
 
         _clipboardListenerService.Start();
         Closed += MainWindow_Closed;
@@ -283,7 +291,42 @@ public sealed partial class MainWindow : Window
     private void UpdateTitleBarInsets()
     {
         TitleLeftPanel.Margin = new Thickness(0, 0, 0, 0);
-        TitleActionsPanel.Margin = new Thickness(0, 0, AppWindow.TitleBar.RightInset + 2, 0);
+        TitleActionsPanel.Margin = new Thickness(0, 0, AppWindow.TitleBar.RightInset + SettingsToCaptionButtonsGap, 0);
+        UpdateTitleBarPassthroughRegions();
+    }
+
+    private void DragRegion_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateTitleBarPassthroughRegions();
+    }
+
+    private void SettingsButton_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateTitleBarPassthroughRegions();
+    }
+
+    private void UpdateTitleBarPassthroughRegions()
+    {
+        if (_nonClientPointerSource is null || SettingsButton.XamlRoot is null || SettingsButton.ActualWidth <= 0 || SettingsButton.ActualHeight <= 0)
+        {
+            return;
+        }
+
+        var scale = SettingsButton.XamlRoot.RasterizationScale;
+        var visualRoot = Content as UIElement;
+        if (visualRoot is null)
+        {
+            return;
+        }
+
+        var topLeft = SettingsButton.TransformToVisual(visualRoot).TransformPoint(new Windows.Foundation.Point(0, 0));
+        var rect = new RectInt32(
+            (int)Math.Round(topLeft.X * scale),
+            (int)Math.Round(topLeft.Y * scale),
+            Math.Max(1, (int)Math.Round(SettingsButton.ActualWidth * scale)),
+            Math.Max(1, (int)Math.Round(SettingsButton.ActualHeight * scale)));
+
+        _nonClientPointerSource.SetRegionRects(NonClientRegionKind.Passthrough, [rect]);
     }
 
     private void FocusSearchBox(bool clearSearch)
@@ -491,6 +534,8 @@ public sealed partial class MainWindow : Window
         _historyService.ClipAdded -= HistoryService_ClipAdded;
         _hotKeyService.WindowMessageReceived -= HotKeyService_WindowMessageReceived;
         AppWindow.Changed -= AppWindow_Changed;
+        DragRegion.SizeChanged -= DragRegion_SizeChanged;
+        SettingsButton.SizeChanged -= SettingsButton_SizeChanged;
         if (_isExiting)
         {
             return;
