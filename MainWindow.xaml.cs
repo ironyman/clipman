@@ -1266,7 +1266,8 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (!IsRecordableTextClip(clip))
+        var snippet = BuildRecordedSnippet(clip);
+        if (string.IsNullOrWhiteSpace(snippet))
         {
             return;
         }
@@ -1279,12 +1280,6 @@ public sealed partial class MainWindow : Window
             }
 
             if (!_viewModel.SelectedClip.Id.Equals(_recordingClipId, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            var snippet = NormalizeText(clip.ContentText!);
-            if (string.IsNullOrWhiteSpace(snippet))
             {
                 return;
             }
@@ -1444,9 +1439,29 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private static bool IsRecordableTextClip(ClipboardClip clip) =>
-        (clip.Kind == ClipKind.Text || clip.Kind == ClipKind.Code || clip.Kind == ClipKind.Url) &&
-        !string.IsNullOrWhiteSpace(clip.ContentText);
+    private static string? BuildRecordedSnippet(ClipboardClip clip)
+    {
+        if ((clip.Kind == ClipKind.Text || clip.Kind == ClipKind.Code || clip.Kind == ClipKind.Url) &&
+            !string.IsNullOrWhiteSpace(clip.ContentText))
+        {
+            return NormalizeText(clip.ContentText);
+        }
+
+        if ((clip.Kind == ClipKind.File || clip.Kind == ClipKind.Video) &&
+            !string.IsNullOrWhiteSpace(clip.ReferencePath))
+        {
+            var paths = clip.ReferencePath
+                .Split([Environment.NewLine, "\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (paths.Length == 0)
+            {
+                return null;
+            }
+
+            return string.Join(Environment.NewLine, paths.Select(path => $"[file] {path}"));
+        }
+
+        return null;
+    }
 
     private async Task ToggleRightPanelAsync()
     {

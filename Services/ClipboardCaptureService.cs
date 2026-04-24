@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
+using Windows.Storage.AccessCache;
 
 namespace Clipman.Services;
 
@@ -16,6 +17,7 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
 {
     private const int MaxFormatCount = 128;
     private const int MaxFormatNameLength = 96;
+    private const string FutureAccessTokenPrefix = "fal://";
 
     public async Task<ClipboardClip?> CaptureAsync(CancellationToken cancellationToken = default)
     {
@@ -180,44 +182,88 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
             return null;
         }
 
-        IReadOnlyList<IStorageItem> items;
-        try
-        {
-            items = await view.GetStorageItemsAsync();
-        }
-        catch (COMException)
-        {
-            return null;
-        }
-        catch (UnauthorizedAccessException)
+        var items = await TryGetStorageItemsAsync(view);
+        if (items.Count == 0)
         {
             return null;
         }
 
-        var paths = items
-            .Select(item => item is StorageFile file ? file.Path : item.Path)
-            .Where(path => !string.IsNullOrWhiteSpace(path))
-            .ToArray();
+        var referenceEntries = new List<string>(items.Count);
+        var previewEntries = new List<string>(items.Count);
 
-        if (paths.Length == 0)
+        foreach (var item in items)
+        {
+            var path = item.Path;
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                referenceEntries.Add(path);
+                previewEntries.Add(path);
+                continue;
+            }
+
+            try
+            {
+                var token = StorageApplicationPermissions.FutureAccessList.Add(item);
+                referenceEntries.Add($"{FutureAccessTokenPrefix}{token}");
+                previewEntries.Add(item.Name);
+            }
+            catch
+            {
+            }
+        }
+
+        if (referenceEntries.Count == 0)
         {
             return null;
         }
 
-        var firstPath = paths[0];
-        var kind = IsVideo(firstPath) ? ClipKind.Video : ClipKind.File;
-        var title = paths.Length == 1 ? Path.GetFileName(firstPath) : $"{paths.Length} files";
+        var firstReference = referenceEntries[0];
+        var firstPreview = previewEntries.FirstOrDefault() ?? "File";
+        var firstName = firstReference.StartsWith(FutureAccessTokenPrefix, StringComparison.OrdinalIgnoreCase)
+            ? firstPreview
+            : Path.GetFileName(firstReference);
+        var kind = IsVideo(firstName) ? ClipKind.Video : ClipKind.File;
+        var title = referenceEntries.Count == 1 ? firstName : $"{referenceEntries.Count} files";
         return BuildClip(
             kind,
             title,
-            string.Join(Environment.NewLine, paths),
-            paths.Length == 1 ? "File reference" : "File references",
+            string.Join(Environment.NewLine, previewEntries),
+            referenceEntries.Count == 1 ? "File reference" : "File references",
             null,
             null,
-            string.Join(Environment.NewLine, paths),
+            string.Join(Environment.NewLine, referenceEntries),
             formatsJson,
             copiedAt,
             sourceContext);
+    }
+
+    private static async Task<IReadOnlyList<IStorageItem>> TryGetStorageItemsAsync(DataPackageView view)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                return await view.GetStorageItemsAsync();
+            }
+            catch (COMException) when (attempt < 2)
+            {
+                await Task.Delay(25);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 2)
+            {
+                await Task.Delay(25);
+            }
+            catch (COMException)
+            {
+                return [];
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return [];
+            }
+        }
+
+        return [];
     }
 
     private static async Task<byte[]?> ReadBitmapAsync(DataPackageView view)
