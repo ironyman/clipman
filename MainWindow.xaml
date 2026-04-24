@@ -94,6 +94,7 @@
                         x:Name="SearchBox"
                         QueryIcon="Find"
                         PlaceholderText="Search clipboard history"
+                        PreviewKeyDown="SearchBox_PreviewKeyDown"
                         KeyDown="SearchBox_KeyDown"
                         QuerySubmitted="SearchBox_QuerySubmitted"
                         TextChanged="SearchBox_TextChanged" />

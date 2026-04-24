@@ -178,8 +178,52 @@ public sealed partial class MainWindow : Window
         UpdateSelectedClipPreviewVisual();
     }
 
+    private void SearchBox_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        HandleSearchBoxKeyDown(e);
+    }
+
     private void SearchBox_KeyDown(object sender, KeyRoutedEventArgs e)
     {
+        HandleSearchBoxKeyDown(e);
+    }
+
+    private void HandleSearchBoxKeyDown(KeyRoutedEventArgs e)
+    {
+        if (e.Handled)
+        {
+            return;
+        }
+
+        var modifiers = GetCurrentModifierFlags();
+        if (modifiers == 1 && e.Key == VirtualKey.F)
+        {
+            MoveSelectionByPage(1);
+            e.Handled = true;
+            return;
+        }
+
+        if (modifiers == 1 && e.Key == VirtualKey.B)
+        {
+            MoveSelectionByPage(-1);
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == VirtualKey.PageDown)
+        {
+            MoveSelectionByPage(1);
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == VirtualKey.PageUp)
+        {
+            MoveSelectionByPage(-1);
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == VirtualKey.Escape)
         {
             HideMainWindow();
@@ -306,6 +350,20 @@ public sealed partial class MainWindow : Window
 
     private void HistoryListView_KeyDown(object sender, KeyRoutedEventArgs e)
     {
+        if (e.Key == VirtualKey.PageDown)
+        {
+            MoveSelectionByPage(1);
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == VirtualKey.PageUp)
+        {
+            MoveSelectionByPage(-1);
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key is VirtualKey.Down or VirtualKey.Up)
         {
             MoveSelection(e.Key == VirtualKey.Down ? 1 : -1);
@@ -542,6 +600,38 @@ public sealed partial class MainWindow : Window
         HistoryListView.ScrollIntoView(_viewModel.SelectedClip);
     }
 
+    private void MoveSelectionByPage(int direction)
+    {
+        if (direction == 0)
+        {
+            return;
+        }
+
+        var pageStep = GetPageSelectionStep();
+        MoveSelection(Math.Sign(direction) * pageStep);
+    }
+
+    private int GetPageSelectionStep()
+    {
+        if (_historyScrollViewer is null || _historyScrollViewer.ViewportHeight <= 0)
+        {
+            return 8;
+        }
+
+        for (var i = 0; i < _viewModel.VisibleClips.Count; i++)
+        {
+            if (HistoryListView.ContainerFromIndex(i) is not ListViewItem { ActualHeight: > 1 } item)
+            {
+                continue;
+            }
+
+            var visibleItems = (int)Math.Floor(_historyScrollViewer.ViewportHeight / item.ActualHeight);
+            return Math.Clamp(visibleItems, 1, 50);
+        }
+
+        return 8;
+    }
+
     private void HistoryListView_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
     {
         if (args.ItemContainer?.ContentTemplateRoot is not FrameworkElement root ||
@@ -639,12 +729,19 @@ public sealed partial class MainWindow : Window
             case HotKeyAction.ToggleWindow:
                 if (IsMainWindowVisible())
                 {
+                    if (!IsMainWindowForeground())
+                    {
+                        _lastHotkeyFocus = CaptureFocusSnapshot();
+                        ShowMainWindow(centerOnFocusWindow: false, clearSearch: false);
+                        return;
+                    }
+
                     HideMainWindow();
                     return;
                 }
 
                 _lastHotkeyFocus = CaptureFocusSnapshot();
-                ShowMainWindow(centerOnFocusWindow: true, clearSearch: true);
+                ShowMainWindow(centerOnFocusWindow: true, clearSearch: false);
                 return;
             case HotKeyAction.PasteRecent1:
             case HotKeyAction.PasteRecent2:
@@ -695,6 +792,8 @@ public sealed partial class MainWindow : Window
     }
 
     private bool IsMainWindowVisible() => IsWindowVisible(WindowNative.GetWindowHandle(this));
+
+    private bool IsMainWindowForeground() => GetForegroundWindow() == WindowNative.GetWindowHandle(this);
 
     private void AppWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
     {
