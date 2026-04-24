@@ -482,7 +482,7 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
             var processName = process.ProcessName;
             var appName = GetFriendlyAppName(processName);
             var executablePath = TryGetProcessExecutablePath(process);
-            var appIconKey = await _appIconCacheService.TryCacheIconByNameAsync(appName, processName, executablePath);
+            var appIconKey = await _appIconCacheService.TryCacheIconByNameAsync(appName, processName, executablePath, windowHandle);
 
             var isBrowser = IsBrowser(processName);
             var tabTitle = isBrowser ? ExtractBrowserTabTitle(windowTitle, appName) : null;
