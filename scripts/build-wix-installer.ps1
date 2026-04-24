@@ -50,7 +50,7 @@ function Get-DirectoryId {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$RelativeDirectory)
 
     if ([string]::IsNullOrWhiteSpace($RelativeDirectory) -or $RelativeDirectory -eq ".") {
-        return "INSTALLFOLDER"
+        return "APPLICATIONFOLDER"
     }
 
     return "DIR_" + (Get-PathHash -Text $RelativeDirectory)
@@ -110,6 +110,7 @@ $msiPath = Join-Path $installerDir $msiName
 
 $dotnetExe = Get-DotnetPath
 $wixExe = Ensure-WixInstalled
+Ensure-WixExtension -WixExePath $wixExe -ExtensionRef "WixToolset.UI.wixext/4.0.6"
 
 Invoke-Step "Preparing artifacts directory: $artifactsFullPath" {
     New-Item -ItemType Directory -Force -Path $artifactsFullPath | Out-Null
@@ -236,7 +237,8 @@ $componentRefsXml = ($componentRefs -join [Environment]::NewLine)
 
 $wixSource = @"
 <?xml version="1.0" encoding="utf-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
     Name="$(Escape-Xml $ProductName)"
     Manufacturer="$(Escape-Xml $Manufacturer)"
@@ -245,17 +247,74 @@ $wixSource = @"
     Scope="perMachine">
     <MajorUpgrade DowngradeErrorMessage="A newer version of $(Escape-Xml $ProductName) is already installed." />
     <MediaTemplate EmbedCab="yes" />
+    <Property Id="ApplicationFolderName" Value="$(Escape-Xml $ProductName)" />
+    <Property Id="WixAppFolder" Value="WixPerMachineFolder" />
     <StandardDirectory Id="$programFilesDirectoryId">
-      <Directory Id="INSTALLFOLDER" Name="$(Escape-Xml $ProductName)">
+      <Directory Id="APPLICATIONFOLDER" Name="$(Escape-Xml $ProductName)">
 ${directoryTreeXml}
       </Directory>
     </StandardDirectory>
-    <Feature Id="MainFeature" Title="$(Escape-Xml $ProductName)" Level="1">
-      <ComponentGroupRef Id="AppFiles" />
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ClipmanProgramMenuFolder" Name="$(Escape-Xml $ProductName)" />
+    </StandardDirectory>
+    <ui:WixUI Id="WixUI_Advanced" />
+    <Feature Id="CompleteFeature" Title="$(Escape-Xml $ProductName)" Level="1" Display="expand">
+      <Feature Id="CoreFeature" Title="$(Escape-Xml $ProductName) Application Files" Level="1">
+        <ComponentGroupRef Id="AppFiles" />
+      </Feature>
+      <Feature
+        Id="StartMenuShortcutFeature"
+        Title="Start Menu Shortcut"
+        Description="Add a Start Menu shortcut for $(Escape-Xml $ProductName)."
+        Level="1"
+        Display="expand">
+        <ComponentRef Id="StartMenuShortcutComponent" />
+      </Feature>
+      <Feature
+        Id="StartOnStartupFeature"
+        Title="Start On Startup"
+        Description="Start $(Escape-Xml $ProductName) automatically when you sign in."
+        Level="1"
+        Display="expand">
+        <ComponentRef Id="StartOnStartupComponent" />
+      </Feature>
     </Feature>
   </Package>
   <Fragment>
 ${directoryRefsXml}
+  </Fragment>
+  <Fragment>
+    <DirectoryRef Id="ClipmanProgramMenuFolder">
+      <Component Id="StartMenuShortcutComponent" Guid="*">
+        <Shortcut
+          Id="ClipmanStartMenuShortcut"
+          Name="$(Escape-Xml $ProductName)"
+          Description="Launch $(Escape-Xml $ProductName)"
+          Target="[APPLICATIONFOLDER]Clipman.exe"
+          WorkingDirectory="APPLICATIONFOLDER" />
+        <RemoveFolder Id="RemoveClipmanProgramMenuFolder" Directory="ClipmanProgramMenuFolder" On="uninstall" />
+        <RegistryValue
+          Root="HKLM"
+          Key="Software\$(Escape-Xml $Manufacturer)\$(Escape-Xml $ProductName)"
+          Name="StartMenuShortcut"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+  <Fragment>
+    <DirectoryRef Id="APPLICATIONFOLDER">
+      <Component Id="StartOnStartupComponent" Guid="*">
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\Microsoft\Windows\CurrentVersion\Run"
+          Name="Clipman"
+          Type="string"
+          Value="&quot;[APPLICATIONFOLDER]Clipman.exe&quot;"
+          KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
   </Fragment>
   <Fragment>
     <ComponentGroup Id="AppFiles">
@@ -277,6 +336,7 @@ Invoke-Step "Building MSI: $msiPath" {
     $wixArgs = @(
         "build", $wxsPath,
         "-arch", $arch,
+        "-ext", "WixToolset.UI.wixext",
         "-o", $msiPath
     )
 

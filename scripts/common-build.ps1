@@ -141,6 +141,25 @@ function Ensure-WixInstalled {
     return $wixPath
 }
 
+function Ensure-WixExtension {
+    param(
+        [Parameter(Mandatory = $true)][string]$WixExePath,
+        [Parameter(Mandatory = $true)][string]$ExtensionRef
+    )
+
+    $extensionId = ($ExtensionRef -split '/')[0]
+    $listOutput = & $WixExePath extension list -g 2>$null
+    if ($LASTEXITCODE -eq 0 -and $listOutput -match [regex]::Escape($extensionId)) {
+        return
+    }
+
+    Write-Host "Installing WiX extension: $ExtensionRef"
+    & $WixExePath extension add -g $ExtensionRef *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to install WiX extension '$ExtensionRef'."
+    }
+}
+
 function Get-VsWherePath {
     $candidates = @(
         "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
