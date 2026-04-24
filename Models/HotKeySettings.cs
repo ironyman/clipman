@@ -62,6 +62,7 @@ public sealed class HotKeySettings
     ];
 
     public bool StartOnWindowsBoot { get; set; }
+    public bool DetailsPanelExpanded { get; set; } = true;
 
     public override string ToString() => ToggleWindow.ToString();
 }

@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using System.Runtime.InteropServices;
 using Windows.Graphics;
 using Windows.System;
 using WinRT.Interop;
@@ -80,6 +81,7 @@ public sealed partial class MainWindow : Window
         {
             rightPanelToggleButton.SizeChanged += RightPanelToggleButton_SizeChanged;
         }
+        ApplyStoredRightPanelState();
         UpdateTitleBarInsets();
         UpdateTitleBarPassthroughRegions();
         UpdateRightPanelToggleIcon();
@@ -308,7 +310,14 @@ public sealed partial class MainWindow : Window
     {
         if (centerOnFocusWindow)
         {
-            CenterWindowOnFocusMonitor(_lastHotkeyFocus.WindowHandle);
+            if (_isRightPanelVisible)
+            {
+                CenterWindowOnFocusMonitor(_lastHotkeyFocus.WindowHandle);
+            }
+            else if (!TryPositionCompactWindowNearCaret())
+            {
+                CenterWindowOnFocusMonitor(_lastHotkeyFocus.WindowHandle);
+            }
         }
 
         ShowWindow(WindowNative.GetWindowHandle(this), SwShow);
@@ -951,15 +960,35 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        var targetVisibility = !_isRightPanelVisible;
+        await SetRightPanelVisibilityAsync(targetVisibility, animate: true);
+        PersistDetailsPanelExpandedSetting(targetVisibility);
+    }
+
+    private async Task SetRightPanelVisibilityAsync(bool isVisible, bool animate)
+    {
+        if (_isRightPanelAnimating)
+        {
+            return;
+        }
+
+        if (_isRightPanelVisible == isVisible)
+        {
+            return;
+        }
+
         _isRightPanelAnimating = true;
         try
         {
-            if (_isRightPanelVisible)
+            if (!isVisible)
             {
                 var leftPaneWidth = Math.Max(GetLeftPaneRuntimeWidth(), HistoryColumn.MinWidth);
                 _expandedWindowWidth = AppWindow.Size.Width;
                 _expandedHistoryPaneWidth = leftPaneWidth;
-                await AnimateRightPanelAsync(show: false);
+                if (animate)
+                {
+                    await AnimateRightPanelAsync(show: false);
+                }
                 RightPanelHost.Visibility = Visibility.Collapsed;
                 DetailsColumn.MinWidth = 0;
                 DetailsColumn.Width = new GridLength(0);
@@ -983,7 +1012,15 @@ public sealed partial class MainWindow : Window
                 GetMinimumWindowWidth() + DipToPhysicalPixels(DetailsColumnExpandedMinWidth + MainPaneExpandedColumnSpacing)));
             RightPanelHost.Visibility = Visibility.Visible;
             Root.UpdateLayout();
-            await AnimateRightPanelAsync(show: true);
+            if (animate)
+            {
+                await AnimateRightPanelAsync(show: true);
+            }
+            else
+            {
+                RightPanelHost.Opacity = 1;
+                RightPanelTranslateTransform.X = 0;
+            }
             _isRightPanelVisible = true;
             UpdateRightPanelToggleIcon();
         }
@@ -991,6 +1028,37 @@ public sealed partial class MainWindow : Window
         {
             _isRightPanelAnimating = false;
         }
+    }
+
+    private void ApplyStoredRightPanelState()
+    {
+        if (_hotKeySettings.DetailsPanelExpanded)
+        {
+            _isRightPanelVisible = true;
+            return;
+        }
+
+        var leftPaneWidth = Math.Max(GetLeftPaneRuntimeWidth(), HistoryColumn.MinWidth);
+        _expandedWindowWidth = AppWindow.Size.Width;
+        _expandedHistoryPaneWidth = leftPaneWidth;
+        RightPanelHost.Visibility = Visibility.Collapsed;
+        DetailsColumn.MinWidth = 0;
+        DetailsColumn.Width = new GridLength(0);
+        MainContentGrid.ColumnSpacing = 0;
+        HistoryColumn.Width = new GridLength(leftPaneWidth);
+        _isRightPanelVisible = false;
+        ResizeWindowWidth(GetMinimumWindowWidth(), preserveCenterPoint: false);
+    }
+
+    private void PersistDetailsPanelExpandedSetting(bool isExpanded)
+    {
+        if (_hotKeySettings.DetailsPanelExpanded == isExpanded)
+        {
+            return;
+        }
+
+        _hotKeySettings.DetailsPanelExpanded = isExpanded;
+        _settingsService.SaveHotKey(_hotKeySettings);
     }
 
     private Task AnimateRightPanelAsync(bool show)
@@ -1069,14 +1137,28 @@ public sealed partial class MainWindow : Window
 
     private int DipToPhysicalPixels(double dipWidth)
     {
-        var scale = Content is FrameworkElement { XamlRoot: not null } root
-            ? root.XamlRoot.RasterizationScale
-            : 1.0;
+        var scale = 1.0;
+        var hwnd = WindowNative.GetWindowHandle(this);
+        if (hwnd != IntPtr.Zero)
+        {
+            var dpi = GetDpiForWindow(hwnd);
+            if (dpi > 0)
+            {
+                scale = dpi / 96.0;
+            }
+        }
+        else if (Content is FrameworkElement { XamlRoot: not null } root)
+        {
+            scale = root.XamlRoot.RasterizationScale;
+        }
 
         return (int)Math.Ceiling(dipWidth * scale);
     }
 
-    private void ResizeWindowWidth(int width)
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hWnd);
+
+    private void ResizeWindowWidth(int width, bool preserveCenterPoint = true)
     {
         if (width <= 0)
         {
@@ -1089,6 +1171,19 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        var currentPosition = AppWindow.Position;
+        var centerX = currentPosition.X + (current.Width / 2);
+        var centerY = currentPosition.Y + (current.Height / 2);
+
         AppWindow.Resize(new SizeInt32(width, current.Height));
+
+        if (!preserveCenterPoint)
+        {
+            return;
+        }
+
+        AppWindow.Move(new PointInt32(
+            centerX - (width / 2),
+            centerY - (current.Height / 2)));
     }
 }

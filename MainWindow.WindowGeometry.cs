@@ -10,11 +10,6 @@ public sealed partial class MainWindow
 
     private void CenterWindowOnFocusMonitor(IntPtr focusWindowHandle)
     {
-        //if (TryPositionWindowNearCaretOrCursor())
-        //{
-        //    return;
-        //}
-
         var targetWindow = focusWindowHandle != IntPtr.Zero ? focusWindowHandle : GetForegroundWindow();
         if (targetWindow == IntPtr.Zero)
         {
@@ -46,9 +41,9 @@ public sealed partial class MainWindow
         AppWindow.Move(new Windows.Graphics.PointInt32(x, y));
     }
 
-    private bool TryPositionWindowNearCaretOrCursor()
+    private bool TryPositionCompactWindowNearCaret()
     {
-        if (!TryGetFocusCaretPoint(out var anchor) && !GetCursorPosForGeometry(out anchor))
+        if (!TryGetFocusCaretPoint(out var anchor))
         {
             return false;
         }

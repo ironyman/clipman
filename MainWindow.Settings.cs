@@ -20,7 +20,8 @@ public sealed partial class MainWindow
             PasteSelected = CloneBinding(_hotKeySettings.PasteSelected),
             TogglePin = CloneBinding(_hotKeySettings.TogglePin),
             PasteRecent = _hotKeySettings.PasteRecent.Select(CloneBinding).ToList(),
-            StartOnWindowsBoot = _hotKeySettings.StartOnWindowsBoot
+            StartOnWindowsBoot = _hotKeySettings.StartOnWindowsBoot,
+            DetailsPanelExpanded = _hotKeySettings.DetailsPanelExpanded
         };
 
         while (working.PasteRecent.Count < RecentHotkeySlotCount)
@@ -58,6 +59,18 @@ public sealed partial class MainWindow
             Content = "Start on Windows boot",
             IsChecked = working.StartOnWindowsBoot
         };
+        var detailsPanelExpandedCheckBox = new CheckBox
+        {
+            Content = "Show details panel",
+            IsChecked = working.DetailsPanelExpanded
+        };
+        var behaviorPanel = new StackPanel
+        {
+            Spacing = 6,
+            Margin = new Thickness(0, 10, 0, 6)
+        };
+        behaviorPanel.Children.Add(startOnBootCheckBox);
+        behaviorPanel.Children.Add(detailsPanelExpandedCheckBox);
 
         var contentRoot = new Grid
         {
@@ -73,9 +86,8 @@ public sealed partial class MainWindow
 
         Grid.SetRow(captureHint, 0);
         contentRoot.Children.Add(captureHint);
-        Grid.SetRow(startOnBootCheckBox, 1);
-        startOnBootCheckBox.Margin = new Thickness(0, 10, 0, 6);
-        contentRoot.Children.Add(startOnBootCheckBox);
+        Grid.SetRow(behaviorPanel, 1);
+        contentRoot.Children.Add(behaviorPanel);
         Grid.SetRow(rowsPanel, 2);
         contentRoot.Children.Add(rowsPanel);
 
@@ -154,11 +166,16 @@ public sealed partial class MainWindow
                 .Select(index => bindings[$"paste_recent_{index}"])
                 .Select(CloneBinding)
                 .ToList(),
-            StartOnWindowsBoot = startOnBootCheckBox.IsChecked == true
+            StartOnWindowsBoot = startOnBootCheckBox.IsChecked == true,
+            DetailsPanelExpanded = detailsPanelExpandedCheckBox.IsChecked == true
         };
         _settingsService.SaveHotKey(_hotKeySettings);
         _hotKeyService.Register(_hotKeySettings);
         ApplyStartupSetting(_hotKeySettings.StartOnWindowsBoot);
+        if (_isRightPanelVisible != _hotKeySettings.DetailsPanelExpanded)
+        {
+            await SetRightPanelVisibilityAsync(_hotKeySettings.DetailsPanelExpanded, animate: false);
+        }
 
         void AddHotKeyRow(Panel panel, string label, string id)
         {
