@@ -42,7 +42,6 @@ public partial class App : Application
         const int VK_MENU = 0x12; // Alt
 
         const int MNC_CLOSE = 1;
-        const int MNC_IGNORE = 0;
 
 
         switch (msg)

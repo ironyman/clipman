@@ -32,6 +32,7 @@ public sealed partial class MainWindow : Window
     private const double DetailsColumnExpandedMinWidth = 340;
 
     private readonly AppSettingsService _settingsService = new();
+    private readonly AppIconCacheService _appIconCacheService = new();
     private readonly EsentClipboardHistoryService _repository = new();
     private readonly ClipboardHistoryService _historyService;
     private readonly ClipboardListenerService _clipboardListenerService;
@@ -55,6 +56,7 @@ public sealed partial class MainWindow : Window
     private int _clipboardListenerPauseDepth;
     private readonly ObservableCollection<SearchBadge> _searchBadges = [];
     private readonly Dictionary<string, BitmapImage?> _imagePreviewCache = [];
+    private readonly Dictionary<string, BitmapImage?> _appIconPreviewCache = [];
     private bool _isUpdatingSearchText;
 
     public MainWindow()
@@ -536,9 +538,22 @@ public sealed partial class MainWindow : Window
     private void HistoryListView_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
     {
         if (args.ItemContainer?.ContentTemplateRoot is not FrameworkElement root ||
-            root.FindName("SlotHintTextBlock") is not TextBlock slotHint ||
             args.Item is not ClipboardClip clip)
         {
+            return;
+        }
+
+        if (args.Phase == 0)
+        {
+            args.RegisterUpdateCallback(HistoryListView_ContainerContentChanging);
+        }
+
+        if (root.FindName("SlotHintTextBlock") is not TextBlock slotHint)
+        {
+            if (args.Phase == 0)
+            {
+                args.RegisterUpdateCallback(HistoryListView_ContainerContentChanging);
+            }
             return;
         }
 
@@ -555,13 +570,33 @@ public sealed partial class MainWindow : Window
 
         var historyImage = root.FindName("HistoryImage") as Image;
         var historyImageHost = root.FindName("HistoryImageHost") as FrameworkElement;
+        var historyAppIcon = root.FindName("HistoryAppIcon") as Image;
+        var historyAppIconHost = root.FindName("HistoryAppIconHost") as FrameworkElement;
         var historyKindIconHost = root.FindName("HistoryKindIconHost") as FrameworkElement;
-        if (historyImage is null || historyImageHost is null || historyKindIconHost is null)
+        var historyKindIcon = root.FindName("HistoryKindIcon") as FrameworkElement;
+        if (historyImage is null ||
+            historyImageHost is null ||
+            historyAppIcon is null ||
+            historyAppIconHost is null ||
+            historyKindIconHost is null ||
+            historyKindIcon is null)
         {
+            if (args.Phase == 0)
+            {
+                args.RegisterUpdateCallback(HistoryListView_ContainerContentChanging);
+            }
             return;
         }
 
-        _ = BindHistoryClipImageAsync(root, clip, historyImage, historyImageHost, historyKindIconHost);
+        _ = BindHistoryLeadingVisualAsync(
+            root,
+            clip,
+            historyImage,
+            historyImageHost,
+            historyAppIcon,
+            historyAppIconHost,
+            historyKindIconHost,
+            historyKindIcon);
     }
 
     private async void HistoryScrollViewer_ViewChanged(object? sender, ScrollViewerViewChangedEventArgs e)
@@ -1302,38 +1337,66 @@ public sealed partial class MainWindow : Window
         _ = DispatcherQueue.TryEnqueue(async () => await UpdateRecentSlotHintsAsync());
     }
 
-    private async Task BindHistoryClipImageAsync(
+    private async Task BindHistoryLeadingVisualAsync(
         FrameworkElement templateRoot,
         ClipboardClip clip,
         Image image,
         FrameworkElement imageHost,
-        FrameworkElement iconHost)
+        Image appIconImage,
+        FrameworkElement appIconHost,
+        FrameworkElement iconHost,
+        FrameworkElement kindIcon)
     {
-        if (clip.Kind != ClipKind.Image || clip.ContentBytes is not { Length: > 0 })
-        {
-            image.Source = null;
-            imageHost.Visibility = Visibility.Collapsed;
-            iconHost.Visibility = Visibility.Visible;
-            return;
-        }
+        SetLeadingVisualState(showAppIcon: false, showImage: false, showGlyph: true);
 
-        var bitmap = await GetOrCreateBitmapImageAsync(clip);
         if (!ReferenceEquals(templateRoot.DataContext, clip))
         {
             return;
         }
 
-        if (bitmap is null)
+        var appIconBitmap = GetOrCreateAppIconImage(clip.AppIconKey);
+        if (!ReferenceEquals(templateRoot.DataContext, clip))
         {
-            image.Source = null;
-            imageHost.Visibility = Visibility.Collapsed;
-            iconHost.Visibility = Visibility.Visible;
             return;
         }
 
-        image.Source = bitmap;
-        imageHost.Visibility = Visibility.Visible;
-        iconHost.Visibility = Visibility.Collapsed;
+        if (appIconBitmap is not null)
+        {
+            appIconImage.Source = appIconBitmap;
+            image.Source = null;
+            SetLeadingVisualState(showAppIcon: true, showImage: false, showGlyph: false);
+            return;
+        }
+
+        if (clip.Kind == ClipKind.Image && clip.ContentBytes is { Length: > 0 })
+        {
+            var imageBitmap = await GetOrCreateBitmapImageAsync(clip);
+            if (!ReferenceEquals(templateRoot.DataContext, clip))
+            {
+                return;
+            }
+
+            if (imageBitmap is not null)
+            {
+                image.Source = imageBitmap;
+                appIconImage.Source = null;
+                SetLeadingVisualState(showAppIcon: false, showImage: true, showGlyph: false);
+                return;
+            }
+        }
+
+        image.Source = null;
+        appIconImage.Source = null;
+        SetLeadingVisualState(showAppIcon: false, showImage: false, showGlyph: true);
+
+        void SetLeadingVisualState(bool showAppIcon, bool showImage, bool showGlyph)
+        {
+            appIconHost.Visibility = showAppIcon ? Visibility.Visible : Visibility.Collapsed;
+            imageHost.Visibility = showImage ? Visibility.Visible : Visibility.Collapsed;
+            iconHost.Visibility = showGlyph ? Visibility.Visible : Visibility.Collapsed;
+            kindIcon.Visibility = showGlyph ? Visibility.Visible : Visibility.Collapsed;
+            iconHost.Opacity = showGlyph ? 1 : 0;
+        }
     }
 
     private void UpdateSelectedClipPreviewVisual()
@@ -1420,6 +1483,39 @@ public sealed partial class MainWindow : Window
         var created = await CreateBitmapImageAsync(clip.ContentBytes);
         _imagePreviewCache[clip.Id] = created;
         return created;
+    }
+
+    private BitmapImage? GetOrCreateAppIconImage(string? iconKey)
+    {
+        if (string.IsNullOrWhiteSpace(iconKey))
+        {
+            return null;
+        }
+
+        if (_appIconPreviewCache.TryGetValue(iconKey, out var cached))
+        {
+            return cached;
+        }
+
+        try
+        {
+            var path = _appIconCacheService.GetIconPath(iconKey);
+            if (!File.Exists(path))
+            {
+                _appIconPreviewCache[iconKey] = null;
+                return null;
+            }
+
+            var created = new BitmapImage();
+            created.UriSource = new Uri(path);
+            _appIconPreviewCache[iconKey] = created;
+            return created;
+        }
+        catch
+        {
+            _appIconPreviewCache[iconKey] = null;
+            return null;
+        }
     }
 
     private static async Task<BitmapImage?> CreateBitmapImageAsync(byte[] bytes)

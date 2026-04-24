@@ -18,6 +18,7 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
     private const int MaxFormatCount = 128;
     private const int MaxFormatNameLength = 96;
     private const string FutureAccessTokenPrefix = "fal://";
+    private readonly AppIconCacheService _appIconCacheService = new();
 
     public async Task<ClipboardClip?> CaptureAsync(CancellationToken cancellationToken = default)
     {
@@ -38,7 +39,7 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
         }
 
         var copiedAt = DateTimeOffset.Now;
-        var sourceContext = TryGetSourceContext();
+        var sourceContext = await TryGetSourceContextAsync();
         var formatsJson = SafeSerializeFormats(formats);
         var fileClip = await TryCreateStorageItemClipAsync(view, formatsJson, copiedAt, sourceContext);
         if (fileClip is not null)
@@ -350,6 +351,7 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
             FormatsJson = formatsJson,
             FormatLabel = formatLabel,
             SourceApp = sourceContext.AppName,
+            AppIconKey = sourceContext.AppIconKey,
             SourceWindowTitle = sourceContext.WindowTitle,
             BrowserTabTitle = sourceContext.TabTitle,
             SourceUrl = pageUrl,
@@ -379,6 +381,7 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
             ReferencePath = clip.ReferencePath,
             FormatsJson = clip.FormatsJson,
             SourceApp = sourceContext.AppName ?? clip.SourceApp,
+            AppIconKey = sourceContext.AppIconKey ?? clip.AppIconKey,
             SourceWindowTitle = sourceContext.WindowTitle ?? clip.SourceWindowTitle,
             BrowserTabTitle = sourceContext.TabTitle ?? clip.BrowserTabTitle,
             SourceUrl = pageUrl,
@@ -455,7 +458,7 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
         return extension is ".mp4" or ".mov" or ".mkv" or ".avi" or ".webm" or ".wmv";
     }
 
-    private static SourceContext TryGetSourceContext()
+    private async Task<SourceContext> TryGetSourceContextAsync()
     {
         try
         {
@@ -472,19 +475,21 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
             _ = GetWindowThreadProcessId(windowHandle, out var processId);
             if (processId == 0)
             {
-                return new SourceContext(null, windowTitle, null, ExtractUrl(windowTitle), null);
+                return new SourceContext(null, null, windowTitle, null, ExtractUrl(windowTitle), null);
             }
 
             var process = Process.GetProcessById((int)processId);
             var processName = process.ProcessName;
             var appName = GetFriendlyAppName(processName);
+            var executablePath = TryGetProcessExecutablePath(process);
+            var appIconKey = await _appIconCacheService.TryCacheIconByNameAsync(appName, processName, executablePath);
 
             var isBrowser = IsBrowser(processName);
             var tabTitle = isBrowser ? ExtractBrowserTabTitle(windowTitle, appName) : null;
             var pageUrl = isBrowser ? TryGetBrowserUrl(windowHandle, processName, windowTitle) : null;
             var domain = Uri.TryCreate(pageUrl, UriKind.Absolute, out var uri) ? uri.Host : null;
 
-            return new SourceContext(appName, windowTitle, tabTitle, pageUrl, domain);
+            return new SourceContext(appName, appIconKey, windowTitle, tabTitle, pageUrl, domain);
         }
         catch
         {
@@ -801,6 +806,18 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
         return windowTitle;
     }
 
+    private static string? TryGetProcessExecutablePath(Process process)
+    {
+        try
+        {
+            return process.MainModule?.FileName;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
@@ -816,11 +833,12 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
 
     private sealed record SourceContext(
         string? AppName,
+        string? AppIconKey,
         string? WindowTitle,
         string? TabTitle,
         string? PageUrl,
         string? Domain)
     {
-        public static SourceContext Empty { get; } = new(null, null, null, null, null);
+        public static SourceContext Empty { get; } = new(null, null, null, null, null, null);
     }
 }

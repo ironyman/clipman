@@ -198,6 +198,19 @@
                                         HorizontalAlignment="Stretch"
                                         VerticalAlignment="Stretch" />
                                 </Border>
+                                <Border
+                                    x:Name="HistoryAppIconHost"
+                                    Width="40"
+                                    Height="40"
+                                    CornerRadius="8"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    Visibility="Collapsed">
+                                    <Image
+                                        x:Name="HistoryAppIcon"
+                                        Stretch="Uniform"
+                                        HorizontalAlignment="Stretch"
+                                        VerticalAlignment="Stretch" />
+                                </Border>
 
                                 <StackPanel Grid.Column="1" Spacing="5">
                                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />

@@ -117,6 +117,7 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
                 AddColumn(session, table, "ReferencePath", JET_coltyp.LongText);
                 AddColumn(session, table, "FormatsJson", JET_coltyp.LongText);
                 AddColumn(session, table, "SourceApp", JET_coltyp.LongText);
+                AddColumn(session, table, "AppIconKey", JET_coltyp.LongText);
                 AddColumn(session, table, "SourceWindowTitle", JET_coltyp.LongText);
                 AddColumn(session, table, "BrowserTabTitle", JET_coltyp.LongText);
                 AddColumn(session, table, "SourceUrl", JET_coltyp.LongText);
@@ -145,6 +146,7 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
     {
         using var table = new Table(session, dbid, TableName, OpenTableGrbit.None);
         AddColumnIfMissing(session, table, "SourceWindowTitle", JET_coltyp.LongText);
+        AddColumnIfMissing(session, table, "AppIconKey", JET_coltyp.LongText);
         AddColumnIfMissing(session, table, "BrowserTabTitle", JET_coltyp.LongText);
         AddColumnIfMissing(session, table, "SourceUrl", JET_coltyp.LongText);
         AddColumnIfMissing(session, table, "SourceDomain", JET_coltyp.LongText);
@@ -359,6 +361,7 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
             SetText(session, table, columns["ReferencePath"], clip.ReferencePath);
             SetText(session, table, columns["FormatsJson"], clip.FormatsJson);
             SetText(session, table, columns["SourceApp"], clip.SourceApp);
+            SetText(session, table, columns["AppIconKey"], clip.AppIconKey);
             SetText(session, table, columns["SourceWindowTitle"], clip.SourceWindowTitle);
             SetText(session, table, columns["BrowserTabTitle"], clip.BrowserTabTitle);
             SetText(session, table, columns["SourceUrl"], clip.SourceUrl);
@@ -511,6 +514,7 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
             ReferencePath = GetText(session, table, columns["ReferencePath"]),
             FormatsJson = GetText(session, table, columns["FormatsJson"]),
             SourceApp = GetText(session, table, columns["SourceApp"]),
+            AppIconKey = GetOptionalText(session, table, columns, "AppIconKey"),
             SourceWindowTitle = GetOptionalText(session, table, columns, "SourceWindowTitle"),
             BrowserTabTitle = GetOptionalText(session, table, columns, "BrowserTabTitle"),
             SourceUrl = GetOptionalText(session, table, columns, "SourceUrl"),
