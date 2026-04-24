@@ -19,8 +19,10 @@ public sealed partial class MainWindow
             ToggleRightPanel = CloneBinding(_hotKeySettings.ToggleRightPanel),
             PasteSelected = CloneBinding(_hotKeySettings.PasteSelected),
             TogglePin = CloneBinding(_hotKeySettings.TogglePin),
+            FileSearchMode = CloneBinding(_hotKeySettings.FileSearchMode),
             PasteRecent = _hotKeySettings.PasteRecent.Select(CloneBinding).ToList(),
             StartOnWindowsBoot = _hotKeySettings.StartOnWindowsBoot,
+            FileSearchServiceEnabled = _hotKeySettings.FileSearchServiceEnabled,
             DetailsPanelExpanded = _hotKeySettings.DetailsPanelExpanded
         };
 
@@ -35,7 +37,8 @@ public sealed partial class MainWindow
             ["toggle_window"] = working.ToggleWindow,
             ["toggle_right_panel"] = working.ToggleRightPanel,
             ["paste_selected"] = working.PasteSelected,
-            ["toggle_pin"] = working.TogglePin
+            ["toggle_pin"] = working.TogglePin,
+            ["file_search_mode"] = working.FileSearchMode
         };
 
         for (var i = 0; i < RecentHotkeySlotCount; i++)
@@ -64,12 +67,18 @@ public sealed partial class MainWindow
             Content = "Show details panel",
             IsChecked = working.DetailsPanelExpanded
         };
+        var fileSearchServiceEnabledCheckBox = new CheckBox
+        {
+            Content = "Enable file search indexing service",
+            IsChecked = working.FileSearchServiceEnabled
+        };
         var behaviorPanel = new StackPanel
         {
             Spacing = 6,
             Margin = new Thickness(0, 10, 0, 6)
         };
         behaviorPanel.Children.Add(startOnBootCheckBox);
+        behaviorPanel.Children.Add(fileSearchServiceEnabledCheckBox);
         behaviorPanel.Children.Add(detailsPanelExpandedCheckBox);
 
         var contentRoot = new Grid
@@ -130,6 +139,7 @@ public sealed partial class MainWindow
         AddHotKeyRow(rowsPanel, "Show/Hide Details Panel", "toggle_right_panel");
         AddHotKeyRow(rowsPanel, "Paste Selected Clip", "paste_selected");
         AddHotKeyRow(rowsPanel, "Toggle Pin", "toggle_pin");
+        AddHotKeyRow(rowsPanel, "Toggle File Search Mode", "file_search_mode");
         for (var i = 0; i < RecentHotkeySlotCount; i++)
         {
             AddHotKeyRow(rowsPanel, $"Paste {i + 1} (Recent)", $"paste_recent_{i + 1}");
@@ -164,16 +174,19 @@ public sealed partial class MainWindow
             ToggleRightPanel = bindings["toggle_right_panel"],
             PasteSelected = bindings["paste_selected"],
             TogglePin = bindings["toggle_pin"],
+            FileSearchMode = bindings["file_search_mode"],
             PasteRecent = Enumerable.Range(1, RecentHotkeySlotCount)
                 .Select(index => bindings[$"paste_recent_{index}"])
                 .Select(CloneBinding)
                 .ToList(),
             StartOnWindowsBoot = startOnBootCheckBox.IsChecked == true,
+            FileSearchServiceEnabled = fileSearchServiceEnabledCheckBox.IsChecked == true,
             DetailsPanelExpanded = detailsPanelExpandedCheckBox.IsChecked == true
         };
         _settingsService.SaveHotKey(_hotKeySettings);
         _hotKeyService.Register(_hotKeySettings);
         ApplyStartupSetting(_hotKeySettings.StartOnWindowsBoot);
+        ApplyFileSearchServiceSetting(_hotKeySettings.FileSearchServiceEnabled);
         if (_isRightPanelVisible != _hotKeySettings.DetailsPanelExpanded)
         {
             await SetRightPanelVisibilityAsync(_hotKeySettings.DetailsPanelExpanded, animate: false);

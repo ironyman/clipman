@@ -53,6 +53,13 @@ public sealed class HotKeySettings
         IsGlobal = false
     };
 
+    public HotKeyBinding FileSearchMode { get; set; } = new()
+    {
+        Modifier = "Control+Shift",
+        Key = "S",
+        IsGlobal = true
+    };
+
     public List<HotKeyBinding> PasteRecent { get; set; } =
     [
         new() { Modifier = "Alt", Key = "1", IsGlobal = false },
@@ -67,6 +74,7 @@ public sealed class HotKeySettings
     ];
 
     public bool StartOnWindowsBoot { get; set; }
+    public bool FileSearchServiceEnabled { get; set; } = false;
     public bool DetailsPanelExpanded { get; set; } = true;
 
     public override string ToString() => ToggleWindow.ToString();

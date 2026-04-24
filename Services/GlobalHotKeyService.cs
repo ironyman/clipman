@@ -196,6 +196,7 @@ public sealed class GlobalHotKeyService : IDisposable
         succeeded &= TryRegisterBinding(HotKeyAction.ToggleRightPanel, settings.ToggleRightPanel);
         succeeded &= TryRegisterBinding(HotKeyAction.PasteSelected, settings.PasteSelected);
         succeeded &= TryRegisterBinding(HotKeyAction.TogglePin, settings.TogglePin);
+        succeeded &= TryRegisterBinding(HotKeyAction.ToggleFileSearchMode, settings.FileSearchMode);
 
         for (var i = 0; i < 9; i++)
         {
@@ -220,8 +221,10 @@ public sealed class GlobalHotKeyService : IDisposable
             ToggleRightPanel = CloneBinding(settings.ToggleRightPanel),
             PasteSelected = CloneBinding(settings.PasteSelected),
             TogglePin = CloneBinding(settings.TogglePin),
+            FileSearchMode = CloneBinding(settings.FileSearchMode),
             PasteRecent = settings.PasteRecent.Select(CloneBinding).ToList(),
             StartOnWindowsBoot = settings.StartOnWindowsBoot,
+            FileSearchServiceEnabled = settings.FileSearchServiceEnabled,
             DetailsPanelExpanded = settings.DetailsPanelExpanded
         };
 

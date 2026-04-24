@@ -60,6 +60,7 @@ public sealed class AppSettingsService
         settings.PasteSelected = NormalizeBinding(settings.PasteSelected, string.Empty, "Enter", defaultIsGlobal: false);
         settings.TogglePin = NormalizeBinding(settings.TogglePin, "Control", "P", defaultIsGlobal: false);
         settings.ToggleRightPanel = NormalizeBinding(settings.ToggleRightPanel, "Control", "E", defaultIsGlobal: false);
+        settings.FileSearchMode = NormalizeBinding(settings.FileSearchMode, "Control+Shift", "S", defaultIsGlobal: true);
 
         if (settings.PasteRecent is null || settings.PasteRecent.Count != 9)
         {

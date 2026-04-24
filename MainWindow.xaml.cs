@@ -36,8 +36,10 @@ public sealed partial class MainWindow : Window
     private readonly EsentClipboardHistoryService _repository = new();
     private readonly ClipboardHistoryService _historyService;
     private readonly ClipboardListenerService _clipboardListenerService;
+    private readonly NtfsFileSearchService _fileSearchService = new();
     private readonly MainViewModel _viewModel;
     private readonly GlobalHotKeyService _hotKeyService;
+    private readonly ObservableCollection<ClipboardClip> _fileSearchResults = [];
     private HotKeySettings _hotKeySettings;
     private ScrollViewer? _historyScrollViewer;
     private InputNonClientPointerSource? _nonClientPointerSource;
@@ -58,6 +60,10 @@ public sealed partial class MainWindow : Window
     private readonly Dictionary<string, BitmapImage?> _imagePreviewCache = [];
     private readonly Dictionary<string, BitmapImage?> _appIconPreviewCache = [];
     private bool _isUpdatingSearchText;
+    private bool _isFileSearchMode;
+    private int _fileSearchRequestVersion;
+
+    private const string FileSearchClipIdPrefix = "filesearch:";
 
     public MainWindow()
     {
@@ -85,6 +91,7 @@ public sealed partial class MainWindow : Window
         _hotKeyService.Pressed += HotKeyService_Pressed;
         _hotKeyService.WindowMessageReceived += HotKeyService_WindowMessageReceived;
         _hotKeyService.Register(_hotKeySettings);
+        ApplyFileSearchServiceSetting(_hotKeySettings.FileSearchServiceEnabled);
         InitializeTrayIcon();
 
         AppWindow.Changed += AppWindow_Changed;
@@ -238,13 +245,13 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (e.Key == VirtualKey.Space && TryCreateBadgeFromInput())
+        if (!_isFileSearchMode && e.Key == VirtualKey.Space && TryCreateBadgeFromInput())
         {
             e.Handled = true;
             return;
         }
 
-        if (e.Key == VirtualKey.Back && TryRemoveLastBadgeAtSearchStart())
+        if (!_isFileSearchMode && e.Key == VirtualKey.Back && TryRemoveLastBadgeAtSearchStart())
         {
             e.Handled = true;
             return;
@@ -262,6 +269,12 @@ public sealed partial class MainWindow : Window
     {
         if (_isUpdatingSearchText)
         {
+            return;
+        }
+
+        if (_isFileSearchMode)
+        {
+            _ = RefreshFileSearchResultsAsync(SearchBox.Text ?? string.Empty);
             return;
         }
 
@@ -423,6 +436,13 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        if (IsLocalBinding(_hotKeySettings.FileSearchMode) && MatchesBinding(e, _hotKeySettings.FileSearchMode))
+        {
+            ToggleFileSearchMode();
+            e.Handled = true;
+            return;
+        }
+
         for (var i = 0; i < _hotKeySettings.PasteRecent.Count && i < RecentHotkeySlotCount; i++)
         {
             var binding = _hotKeySettings.PasteRecent[i];
@@ -557,6 +577,13 @@ public sealed partial class MainWindow : Window
 
     private void ApplyCompositeSearchQuery()
     {
+        if (_isFileSearchMode)
+        {
+            RefreshSearchBadgesUi();
+            _ = RefreshFileSearchResultsAsync(SearchBox.Text ?? string.Empty);
+            return;
+        }
+
         var freeText = (SearchBox.Text ?? string.Empty).Trim();
         var badgeTokens = _searchBadges
             .Select(badge => $"{badge.Key}:{Uri.EscapeDataString(badge.Value)}")
@@ -763,6 +790,9 @@ public sealed partial class MainWindow : Window
             case HotKeyAction.TogglePin:
                 TogglePin_Click(this, new RoutedEventArgs());
                 return;
+            case HotKeyAction.ToggleFileSearchMode:
+                ToggleFileSearchMode();
+                return;
         }
     }
 
@@ -956,7 +986,7 @@ public sealed partial class MainWindow : Window
     private async void AddTags_Click(object sender, RoutedEventArgs e)
     {
         var clip = _viewModel.SelectedClip;
-        if (clip is null)
+        if (clip is null || IsFileSearchClip(clip))
         {
             return;
         }
@@ -987,6 +1017,11 @@ public sealed partial class MainWindow : Window
     private void EditClip_Click(object sender, RoutedEventArgs e)
     {
         var clip = _viewModel.SelectedClip;
+        if (IsFileSearchClip(clip))
+        {
+            return;
+        }
+
         if (!CanEditClipText(clip))
         {
             return;
@@ -1067,7 +1102,7 @@ public sealed partial class MainWindow : Window
     private async void TogglePin_Click(object sender, RoutedEventArgs e)
     {
         var clip = _viewModel.SelectedClip;
-        if (clip is null)
+        if (clip is null || IsFileSearchClip(clip))
         {
             return;
         }
@@ -1079,7 +1114,7 @@ public sealed partial class MainWindow : Window
     private async void DeleteClip_Click(object sender, RoutedEventArgs e)
     {
         var clip = _viewModel.SelectedClip;
-        if (clip is null)
+        if (clip is null || IsFileSearchClip(clip))
         {
             return;
         }
@@ -1190,6 +1225,7 @@ public sealed partial class MainWindow : Window
         _viewModel.VisibleClips.CollectionChanged -= VisibleClips_CollectionChanged;
         Root.ActualThemeChanged -= Root_ActualThemeChanged;
         _clipboardListenerService.Dispose();
+        _fileSearchService.Dispose();
         RemoveTrayIcon();
         _hotKeyService.Dispose();
         _repository.Dispose();
@@ -1811,6 +1847,119 @@ public sealed partial class MainWindow : Window
         storyboard.Begin();
         return completion.Task;
     }
+
+    private void ToggleFileSearchMode()
+    {
+        if (!_hotKeySettings.FileSearchServiceEnabled)
+        {
+            return;
+        }
+
+        var enabling = !_isFileSearchMode;
+        SetFileSearchMode(enabling);
+        if (!enabling)
+        {
+            return;
+        }
+
+        if (!IsMainWindowVisible())
+        {
+            _lastHotkeyFocus = CaptureFocusSnapshot();
+            ShowMainWindow(centerOnFocusWindow: true, clearSearch: false);
+            return;
+        }
+
+        FocusSearchBox(clearSearch: false);
+    }
+
+    private void ApplyFileSearchServiceSetting(bool enabled)
+    {
+        if (enabled)
+        {
+            _fileSearchService.Start();
+            return;
+        }
+
+        if (_isFileSearchMode)
+        {
+            SetFileSearchMode(false);
+        }
+
+        _fileSearchService.Stop();
+    }
+
+    private void SetFileSearchMode(bool enabled)
+    {
+        if (_isFileSearchMode == enabled)
+        {
+            return;
+        }
+
+        _isFileSearchMode = enabled;
+        Interlocked.Increment(ref _fileSearchRequestVersion);
+        _searchBadges.Clear();
+        RefreshSearchBadgesUi();
+        _isUpdatingSearchText = true;
+        SearchBox.Text = string.Empty;
+        _isUpdatingSearchText = false;
+
+        if (enabled)
+        {
+            SearchBox.PlaceholderText = "Search files (NTFS index)";
+            HistoryListView.ItemsSource = _fileSearchResults;
+            _fileSearchResults.Clear();
+            _viewModel.SelectedClip = null;
+            _ = RefreshFileSearchResultsAsync(string.Empty);
+            return;
+        }
+
+        SearchBox.PlaceholderText = "Search clipboard history";
+        HistoryListView.ItemsSource = _viewModel.VisibleClips;
+        _fileSearchResults.Clear();
+        _ = _viewModel.RefreshAsync();
+    }
+
+    private async Task RefreshFileSearchResultsAsync(string query)
+    {
+        var requestVersion = Interlocked.Increment(ref _fileSearchRequestVersion);
+        var entries = await Task.Run(() => _fileSearchService.Search(query, 250));
+        if (!_isFileSearchMode || requestVersion != _fileSearchRequestVersion)
+        {
+            return;
+        }
+
+        _fileSearchResults.Clear();
+        foreach (var clip in entries.Select(MapFileSearchEntryToClip))
+        {
+            _fileSearchResults.Add(clip);
+        }
+
+        _viewModel.SelectedClip = _fileSearchResults.FirstOrDefault();
+        await UpdateRecentSlotHintsAsync();
+    }
+
+    private static ClipboardClip MapFileSearchEntryToClip(FileSearchEntry entry)
+    {
+        var id = $"{FileSearchClipIdPrefix}{entry.Path}";
+        var format = entry.IsDirectory ? "Folder" : "File";
+        return new ClipboardClip
+        {
+            Id = id,
+            Kind = ClipKind.File,
+            Title = entry.Name,
+            Preview = entry.Path,
+            ContentText = entry.Path,
+            ReferencePath = entry.Path,
+            SourceApp = "File search index",
+            SourceDomain = entry.Volume,
+            FormatLabel = format,
+            CopiedAt = DateTimeOffset.Now,
+            IsPinned = false
+        };
+    }
+
+    private static bool IsFileSearchClip(ClipboardClip? clip) =>
+        clip is not null && clip.Id.StartsWith(FileSearchClipIdPrefix, StringComparison.Ordinal);
 
     private void UpdateRightPanelToggleIcon()
     {

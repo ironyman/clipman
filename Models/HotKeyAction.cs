@@ -14,5 +14,6 @@ public enum HotKeyAction
     PasteRecent9 = 10,
     ToggleRightPanel = 11,
     PasteSelected = 12,
-    TogglePin = 13
+    TogglePin = 13,
+    ToggleFileSearchMode = 14
 }
