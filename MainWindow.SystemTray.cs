@@ -11,6 +11,7 @@ public sealed partial class MainWindow
     private const uint WmLButtonUp = 0x0202;
     private const uint WmRButtonUp = 0x0205;
     private const uint NimAdd = 0x00000000;
+    private const uint NimModify = 0x00000001;
     private const uint NimDelete = 0x00000002;
     private const uint NifMessage = 0x00000001;
     private const uint NifIcon = 0x00000002;
@@ -28,6 +29,11 @@ public sealed partial class MainWindow
     private const uint CmExit = 0x1002;
     private const uint CmFirstClip = 0x2000;
     private const int MaxTrayClipItems = 12;
+    private const uint LrLoadFromFile = 0x0010;
+    private const uint LrDefaultSize = 0x0040;
+    private const uint ImageIcon = 1;
+
+    private IntPtr _trayThemeIconHandle;
 
     private bool HotKeyService_WindowMessageReceived(uint msg, IntPtr wParam, IntPtr lParam)
     {
@@ -169,16 +175,21 @@ public sealed partial class MainWindow
     {
         if (!_trayIconAdded)
         {
+            ReleaseTrayThemeIcon();
             return;
         }
 
         var data = CreateNotifyIconData();
         Shell_NotifyIcon(NimDelete, ref data);
         _trayIconAdded = false;
+        ReleaseTrayThemeIcon();
     }
 
     private NotifyIconData CreateNotifyIconData()
     {
+        var iconHandle = _trayThemeIconHandle != IntPtr.Zero
+            ? _trayThemeIconHandle
+            : LoadIcon(IntPtr.Zero, (IntPtr)IdiApplication);
         var data = new NotifyIconData
         {
             cbSize = (uint)Marshal.SizeOf<NotifyIconData>(),
@@ -186,14 +197,60 @@ public sealed partial class MainWindow
             uID = TrayIconId,
             uFlags = NifMessage | NifIcon | NifTip,
             uCallbackMessage = WmTrayIcon,
-            hIcon = LoadIcon(IntPtr.Zero, (IntPtr)IdiApplication),
+            hIcon = iconHandle,
             szTip = "Clipman"
         };
         return data;
     }
 
+    private void UpdateTrayThemeIcon(string iconPath)
+    {
+        if (_isWindowClosed || string.IsNullOrWhiteSpace(iconPath))
+        {
+            return;
+        }
+
+        var iconHandle = LoadImage(IntPtr.Zero, iconPath, ImageIcon, 0, 0, LrLoadFromFile | LrDefaultSize);
+        if (iconHandle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var previous = _trayThemeIconHandle;
+        _trayThemeIconHandle = iconHandle;
+
+        if (_trayIconAdded)
+        {
+            var data = CreateNotifyIconData();
+            _ = Shell_NotifyIcon(NimModify, ref data);
+        }
+
+        if (previous != IntPtr.Zero)
+        {
+            _ = DestroyIcon(previous);
+        }
+    }
+
+    private void ReleaseTrayThemeIcon()
+    {
+        if (_trayThemeIconHandle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        _ = DestroyIcon(_trayThemeIconHandle);
+        _trayThemeIconHandle = IntPtr.Zero;
+    }
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr LoadIcon(IntPtr hInstance, IntPtr lpIconName);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr LoadImage(IntPtr hInst, string lpszName, uint uType, int cxDesired, int cyDesired, uint fuLoad);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DestroyIcon(IntPtr hIcon);
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]

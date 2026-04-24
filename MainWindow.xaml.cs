@@ -53,6 +53,8 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(DragRegion);
         TryEnableMica();
+        Root.ActualThemeChanged += Root_ActualThemeChanged;
+        ApplyThemeIcons();
         _nonClientPointerSource = InputNonClientPointerSource.GetForWindowId(AppWindow.Id);
 
         _hotKeyService = new GlobalHotKeyService(WindowNative.GetWindowHandle(this));
@@ -605,6 +607,7 @@ public sealed partial class MainWindow : Window
     private void MainWindow_Closed(object sender, WindowEventArgs args)
     {
         _isWindowClosed = true;
+        Root.ActualThemeChanged -= Root_ActualThemeChanged;
         _clipboardListenerService.Dispose();
         RemoveTrayIcon();
         _hotKeyService.Dispose();
@@ -619,6 +622,39 @@ public sealed partial class MainWindow : Window
     private void TryEnableMica()
     {
         SystemBackdrop = new MicaBackdrop();
+    }
+
+    private void Root_ActualThemeChanged(FrameworkElement sender, object args)
+    {
+        ApplyThemeIcons();
+    }
+
+    private void ApplyThemeIcons()
+    {
+        try
+        {
+            var iconPath = GetThemeIconPath();
+            if (File.Exists(iconPath))
+            {
+                AppWindow.SetIcon(iconPath);
+                UpdateTrayThemeIcon(iconPath);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private string GetThemeIconPath()
+    {
+        var fileName = Root.ActualTheme == ElementTheme.Dark ? "clipman-light.ico" : "clipman-dark.ico";
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", fileName);
+        if (!File.Exists(iconPath))
+        {
+            iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "clipman.ico");
+        }
+
+        return iconPath;
     }
 
     private static ScrollViewer? FindScrollViewer(DependencyObject root)
