@@ -172,12 +172,31 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <Border Width="40" Height="40" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                <Border
+                                    x:Name="HistoryKindIconHost"
+                                    Width="40"
+                                    Height="40"
+                                    CornerRadius="8"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
                                     <FontIcon
+                                        x:Name="HistoryKindIcon"
                                         Glyph="{Binding Kind, Converter={StaticResource KindIconConverter}}"
                                         FontSize="18"
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center" />
+                                </Border>
+                                <Border
+                                    x:Name="HistoryImageHost"
+                                    Width="40"
+                                    Height="40"
+                                    CornerRadius="8"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    Visibility="Collapsed">
+                                    <Image
+                                        x:Name="HistoryImage"
+                                        Stretch="UniformToFill"
+                                        HorizontalAlignment="Stretch"
+                                        VerticalAlignment="Stretch" />
                                 </Border>
 
                                 <StackPanel Grid.Column="1" Spacing="5">
@@ -291,6 +310,25 @@
                                     x:Name="SelectedPreviewTextBlock"
                                     Text="{Binding SelectedClip.DisplayContent}"
                                     FontSize="15"
+                                    TextWrapping="Wrap"
+                                    IsTextSelectionEnabled="True" />
+                            </ScrollViewer>
+                            <ScrollViewer x:Name="SelectedPreviewImageScrollViewer" Visibility="Collapsed">
+                                <Border
+                                    Padding="8"
+                                    CornerRadius="8"
+                                    Background="{ThemeResource LayerFillColorDefaultBrush}">
+                                    <Image
+                                        x:Name="SelectedPreviewImage"
+                                        Stretch="Uniform"
+                                        MaxHeight="420"
+                                        HorizontalAlignment="Stretch" />
+                                </Border>
+                            </ScrollViewer>
+                            <ScrollViewer x:Name="SelectedPreviewFileScrollViewer" Visibility="Collapsed">
+                                <TextBlock
+                                    x:Name="SelectedPreviewFileTextBlock"
+                                    FontSize="14"
                                     TextWrapping="Wrap"
                                     IsTextSelectionEnabled="True" />
                             </ScrollViewer>

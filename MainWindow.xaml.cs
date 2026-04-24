@@ -7,12 +7,15 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Media.Animation;
 using System.Collections.Specialized;
 using System.Collections.ObjectModel;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Graphics;
 using Windows.System;
+using Windows.Storage.Streams;
 using WinRT.Interop;
 
 namespace Clipman;
@@ -51,6 +54,7 @@ public sealed partial class MainWindow : Window
     private double _expandedHistoryPaneWidth = double.NaN;
     private int _clipboardListenerPauseDepth;
     private readonly ObservableCollection<SearchBadge> _searchBadges = [];
+    private readonly Dictionary<string, BitmapImage?> _imagePreviewCache = [];
     private bool _isUpdatingSearchText;
 
     public MainWindow()
@@ -107,6 +111,7 @@ public sealed partial class MainWindow : Window
         await _viewModel.LoadAsync();
         await UpdateRecentSlotHintsAsync();
         RenderTagBadges();
+        UpdateSelectedClipPreviewVisual();
     }
 
     private void FilterButton_Click(object sender, RoutedEventArgs e)
@@ -168,6 +173,7 @@ public sealed partial class MainWindow : Window
         }
 
         RenderTagBadges();
+        UpdateSelectedClipPreviewVisual();
     }
 
     private void SearchBox_KeyDown(object sender, KeyRoutedEventArgs e)
@@ -546,6 +552,16 @@ public sealed partial class MainWindow : Window
             slotHint.Visibility = Visibility.Collapsed;
             slotHint.Text = string.Empty;
         }
+
+        var historyImage = root.FindName("HistoryImage") as Image;
+        var historyImageHost = root.FindName("HistoryImageHost") as FrameworkElement;
+        var historyKindIconHost = root.FindName("HistoryKindIconHost") as FrameworkElement;
+        if (historyImage is null || historyImageHost is null || historyKindIconHost is null)
+        {
+            return;
+        }
+
+        _ = BindHistoryClipImageAsync(root, clip, historyImage, historyImageHost, historyKindIconHost);
     }
 
     private async void HistoryScrollViewer_ViewChanged(object? sender, ScrollViewerViewChangedEventArgs e)
@@ -1207,6 +1223,8 @@ public sealed partial class MainWindow : Window
         {
             _ = _viewModel.RefreshAsync();
         }
+
+        UpdateSelectedClipPreviewVisual();
     }
 
     private static bool CanEditClipText(ClipboardClip? clip) =>
@@ -1287,6 +1305,143 @@ public sealed partial class MainWindow : Window
     private void VisibleClips_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         _ = DispatcherQueue.TryEnqueue(async () => await UpdateRecentSlotHintsAsync());
+    }
+
+    private async Task BindHistoryClipImageAsync(
+        FrameworkElement templateRoot,
+        ClipboardClip clip,
+        Image image,
+        FrameworkElement imageHost,
+        FrameworkElement iconHost)
+    {
+        if (clip.Kind != ClipKind.Image || clip.ContentBytes is not { Length: > 0 })
+        {
+            image.Source = null;
+            imageHost.Visibility = Visibility.Collapsed;
+            iconHost.Visibility = Visibility.Visible;
+            return;
+        }
+
+        var bitmap = await GetOrCreateBitmapImageAsync(clip);
+        if (!ReferenceEquals(templateRoot.DataContext, clip))
+        {
+            return;
+        }
+
+        if (bitmap is null)
+        {
+            image.Source = null;
+            imageHost.Visibility = Visibility.Collapsed;
+            iconHost.Visibility = Visibility.Visible;
+            return;
+        }
+
+        image.Source = bitmap;
+        imageHost.Visibility = Visibility.Visible;
+        iconHost.Visibility = Visibility.Collapsed;
+    }
+
+    private void UpdateSelectedClipPreviewVisual()
+    {
+        if (_isEditingTextClip)
+        {
+            return;
+        }
+
+        var selected = _viewModel.SelectedClip;
+        if (selected is null)
+        {
+            ShowTextPreview();
+            SelectedPreviewTextBlock.Text = string.Empty;
+            return;
+        }
+
+        if (selected.Kind == ClipKind.Image && selected.ContentBytes is { Length: > 0 })
+        {
+            _ = ShowImagePreviewAsync(selected);
+            return;
+        }
+
+        if ((selected.Kind == ClipKind.File || selected.Kind == ClipKind.Video) &&
+            !string.IsNullOrWhiteSpace(selected.ReferencePath))
+        {
+            ShowFilePreview(selected);
+            return;
+        }
+
+        ShowTextPreview();
+    }
+
+    private async Task ShowImagePreviewAsync(ClipboardClip clip)
+    {
+        var bitmap = await GetOrCreateBitmapImageAsync(clip);
+        if (_viewModel.SelectedClip?.Id != clip.Id)
+        {
+            return;
+        }
+
+        if (bitmap is null)
+        {
+            ShowTextPreview();
+            return;
+        }
+
+        SelectedPreviewImage.Source = bitmap;
+        PreviewScrollViewer.Visibility = Visibility.Collapsed;
+        SelectedPreviewFileScrollViewer.Visibility = Visibility.Collapsed;
+        SelectedPreviewImageScrollViewer.Visibility = Visibility.Visible;
+    }
+
+    private void ShowFilePreview(ClipboardClip clip)
+    {
+        SelectedPreviewFileTextBlock.Text = clip.ReferencePath ?? clip.Preview;
+        SelectedPreviewImage.Source = null;
+        PreviewScrollViewer.Visibility = Visibility.Collapsed;
+        SelectedPreviewImageScrollViewer.Visibility = Visibility.Collapsed;
+        SelectedPreviewFileScrollViewer.Visibility = Visibility.Visible;
+    }
+
+    private void ShowTextPreview()
+    {
+        SelectedPreviewImage.Source = null;
+        SelectedPreviewFileTextBlock.Text = string.Empty;
+        SelectedPreviewImageScrollViewer.Visibility = Visibility.Collapsed;
+        SelectedPreviewFileScrollViewer.Visibility = Visibility.Collapsed;
+        PreviewScrollViewer.Visibility = Visibility.Visible;
+    }
+
+    private async Task<BitmapImage?> GetOrCreateBitmapImageAsync(ClipboardClip clip)
+    {
+        if (clip.ContentBytes is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        if (_imagePreviewCache.TryGetValue(clip.Id, out var cached))
+        {
+            return cached;
+        }
+
+        var created = await CreateBitmapImageAsync(clip.ContentBytes);
+        _imagePreviewCache[clip.Id] = created;
+        return created;
+    }
+
+    private static async Task<BitmapImage?> CreateBitmapImageAsync(byte[] bytes)
+    {
+        try
+        {
+            using var stream = new InMemoryRandomAccessStream();
+            await stream.WriteAsync(bytes.AsBuffer());
+            stream.Seek(0);
+            var bitmap = new BitmapImage();
+            await bitmap.SetSourceAsync(stream);
+            return bitmap;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static bool IsRecordableTextClip(ClipboardClip clip) =>

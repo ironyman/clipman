@@ -32,11 +32,8 @@ public sealed partial class MainWindow
                 RequestedOperation = DataPackageOperation.Copy
             };
 
-            if (!string.IsNullOrWhiteSpace(clip.ContentText))
-            {
-                package.SetText(clip.ContentText);
-            }
-            else if (!string.IsNullOrWhiteSpace(clip.ReferencePath))
+            if ((clip.Kind == ClipKind.File || clip.Kind == ClipKind.Video) &&
+                !string.IsNullOrWhiteSpace(clip.ReferencePath))
             {
                 var storageItems = await ResolveStorageItemsAsync(clip.ReferencePath);
                 if (storageItems.Count > 0)
@@ -48,12 +45,16 @@ public sealed partial class MainWindow
                     package.SetText(clip.ReferencePath);
                 }
             }
-            else if (clip.ContentBytes is { Length: > 0 } && clip.Kind == ClipKind.Image)
+            else if (clip.Kind == ClipKind.Image && clip.ContentBytes is { Length: > 0 })
             {
                 var stream = new InMemoryRandomAccessStream();
                 await stream.WriteAsync(clip.ContentBytes.AsBuffer());
                 stream.Seek(0);
                 package.SetBitmap(RandomAccessStreamReference.CreateFromStream(stream));
+            }
+            else if (!string.IsNullOrWhiteSpace(clip.ContentText))
+            {
+                package.SetText(clip.ContentText);
             }
             else if (!string.IsNullOrWhiteSpace(clip.SourceUrl))
             {
