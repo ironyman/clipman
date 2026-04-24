@@ -37,6 +37,83 @@ static bool IsLikelyUrl(const std::wstring& text)
     return text.find(L'.') != std::wstring::npos && text.find(L' ') == std::wstring::npos;
 }
 
+extern "C" __declspec(dllexport) int __stdcall SendCtrlVToForeground()
+{
+    constexpr BYTE vkControl = VK_CONTROL;
+    constexpr BYTE vkLeftControl = VK_LCONTROL;
+    constexpr BYTE vkV = 'V';
+    constexpr UINT keyEventfKeyUp = KEYEVENTF_KEYUP;
+
+    const HWND foreground = ::GetForegroundWindow();
+    if (foreground == nullptr)
+    {
+        return 0;
+    }
+
+    const BYTE controlScan = static_cast<BYTE>(::MapVirtualKeyW(vkControl, MAPVK_VK_TO_VSC));
+    const BYTE leftControlScan = static_cast<BYTE>(::MapVirtualKeyW(vkLeftControl, MAPVK_VK_TO_VSC));
+    const BYTE vScan = static_cast<BYTE>(::MapVirtualKeyW(vkV, MAPVK_VK_TO_VSC));
+
+    auto isDown = [](int vk)
+    {
+        return (::GetAsyncKeyState(vk) & 0x8000) != 0;
+    };
+    auto releaseKey = [&](BYTE vk)
+    {
+        if (!isDown(vk))
+        {
+            return;
+        }
+
+        const BYTE scan = static_cast<BYTE>(::MapVirtualKeyW(vk, MAPVK_VK_TO_VSC));
+        ::keybd_event(vk, scan, KEYEVENTF_KEYUP, 0);
+    };
+
+    // Avoid menu beeps from Alt-triggered hotkeys by waiting for non-paste modifiers to be released.
+    for (int i = 0; i < 24; ++i)
+    {
+        const bool altDown = isDown(VK_MENU) || isDown(VK_LMENU) || isDown(VK_RMENU);
+        const bool shiftDown = isDown(VK_SHIFT) || isDown(VK_LSHIFT) || isDown(VK_RSHIFT);
+        const bool winDown = isDown(VK_LWIN) || isDown(VK_RWIN);
+        if (!altDown && !shiftDown && !winDown)
+        {
+            break;
+        }
+
+        ::Sleep(5);
+    }
+
+    // Force-release non-paste modifiers in case the originating hotkey left one logically down.
+    releaseKey(VK_MENU);
+    releaseKey(VK_LMENU);
+    releaseKey(VK_RMENU);
+    releaseKey(VK_SHIFT);
+    releaseKey(VK_LSHIFT);
+    releaseKey(VK_RSHIFT);
+    releaseKey(VK_LWIN);
+    releaseKey(VK_RWIN);
+    ::Sleep(8);
+
+    // keybd_event can drop modifiers if focus/state changes between events.
+    // Press left-control explicitly and verify state before sending V.
+    ::keybd_event(vkLeftControl, leftControlScan, 0, 0);
+    ::Sleep(8);
+    if ((::GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0)
+    {
+        ::keybd_event(vkControl, controlScan, 0, 0);
+        ::Sleep(8);
+    }
+
+    ::keybd_event(vkV, vScan, 0, 0);
+    ::Sleep(6);
+    ::keybd_event(vkV, vScan, keyEventfKeyUp, 0);
+    ::Sleep(4);
+    ::keybd_event(vkLeftControl, leftControlScan, keyEventfKeyUp, 0);
+    ::keybd_event(vkControl, controlScan, keyEventfKeyUp, 0);
+
+    return 1;
+}
+
 extern "C" __declspec(dllexport) int __stdcall GetEdgeUrlFromWindow(HWND hwndEdge, wchar_t* output, int outputChars)
 {
     if (output == nullptr || outputChars <= 1 || hwndEdge == nullptr)

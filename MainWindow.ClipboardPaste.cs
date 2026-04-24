@@ -10,10 +10,6 @@ namespace Clipman;
 
 public sealed partial class MainWindow
 {
-    private const uint KeyEventfKeyUp = 0x0002;
-    private const ushort VkControl = 0x11;
-    private const ushort VkV = 0x56;
-    private const uint MapvkVkToVsc = 0;
     private const uint WmPaste = 0x0302;
 
     private async Task<bool> PutSelectedClipOnClipboardAsync()
@@ -215,39 +211,17 @@ public sealed partial class MainWindow
 
     private static bool SendCtrlV()
     {
-        var foreground = GetForegroundWindow();
-        if (foreground == IntPtr.Zero)
+        try
+        {
+            return SendCtrlVToForeground() != 0;
+        }
+        catch (DllNotFoundException)
         {
             return false;
         }
-
-        var foregroundThreadId = foreground != IntPtr.Zero
-            ? GetWindowThreadProcessId(foreground, out _)
-            : 0u;
-        var myThreadId = GetCurrentThreadId();
-
-        var attached = false;
-        if (foregroundThreadId != 0 && foregroundThreadId != myThreadId)
+        catch (EntryPointNotFoundException)
         {
-            attached = AttachThreadInput(myThreadId, foregroundThreadId, true);
-        }
-
-        try
-        {
-            var controlScan = (byte)MapVirtualKey(VkControl, MapvkVkToVsc);
-            var vScan = (byte)MapVirtualKey(VkV, MapvkVkToVsc);
-            keybd_event((byte)VkControl, controlScan, 0, UIntPtr.Zero);
-            keybd_event((byte)VkV, vScan, 0, UIntPtr.Zero);
-            keybd_event((byte)VkV, vScan, KeyEventfKeyUp, UIntPtr.Zero);
-            keybd_event((byte)VkControl, controlScan, KeyEventfKeyUp, UIntPtr.Zero);
-            return true;
-        }
-        finally
-        {
-            if (attached)
-            {
-                AttachThreadInput(myThreadId, foregroundThreadId, false);
-            }
+            return false;
         }
     }
 
@@ -273,9 +247,6 @@ public sealed partial class MainWindow
     private static extern uint GetCurrentThreadId();
 
     [DllImport("user32.dll")]
-    private static extern uint MapVirtualKey(uint uCode, uint uMapType);
-
-    [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
 
@@ -290,8 +261,8 @@ public sealed partial class MainWindow
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsWindow(IntPtr hWnd);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+    [DllImport("clipman_uia_bridge.dll", CallingConvention = CallingConvention.StdCall)]
+    private static extern int SendCtrlVToForeground();
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr SendMessageTimeout(
