@@ -8,6 +8,7 @@ namespace Clipman;
 public sealed partial class MainWindow
 {
     private const uint WmTrayIcon = 0x8001;
+    private const uint WmGetMinMaxInfo = 0x0024;
     private const uint WmLButtonUp = 0x0202;
     private const uint WmRButtonUp = 0x0205;
     private const uint NimAdd = 0x00000000;
@@ -37,6 +38,14 @@ public sealed partial class MainWindow
 
     private bool HotKeyService_WindowMessageReceived(uint msg, IntPtr wParam, IntPtr lParam)
     {
+        if (msg == WmGetMinMaxInfo && lParam != IntPtr.Zero)
+        {
+            var minMaxInfo = Marshal.PtrToStructure<MinMaxInfo>(lParam);
+            minMaxInfo.ptMinTrackSize.X = Math.Max(minMaxInfo.ptMinTrackSize.X, GetMinimumWindowWidth());
+            Marshal.StructureToPtr(minMaxInfo, lParam, fDeleteOld: false);
+            return false;
+        }
+
         if (msg == WmTrayIcon)
         {
             var mouseMessage = unchecked((uint)lParam.ToInt64());
@@ -302,5 +311,15 @@ public sealed partial class MainWindow
     {
         public int X;
         public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MinMaxInfo
+    {
+        public NativePoint ptReserved;
+        public NativePoint ptMaxSize;
+        public NativePoint ptMaxPosition;
+        public NativePoint ptMinTrackSize;
+        public NativePoint ptMaxTrackSize;
     }
 }

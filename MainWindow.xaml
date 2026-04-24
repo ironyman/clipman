@@ -73,13 +73,13 @@
             </StackPanel>
         </Grid>
 
-        <Grid Grid.Row="1" Padding="16,8,16,16" ColumnSpacing="12">
+        <Grid x:Name="MainContentGrid" Grid.Row="1" Padding="16,8,16,16" ColumnSpacing="12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="HistoryColumn" Width="420" MinWidth="320" />
                 <ColumnDefinition x:Name="DetailsColumn" Width="*" MinWidth="340" />
             </Grid.ColumnDefinitions>
 
-            <Grid Grid.Column="0" RowSpacing="12">
+            <Grid x:Name="HistoryPaneHost" Grid.Column="0" RowSpacing="12">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />

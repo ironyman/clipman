@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using WinRT.Interop;
 
 namespace Clipman;
 
@@ -111,6 +112,24 @@ public sealed partial class MainWindow
         }
     }
 
+    private int GetWindowFrameWidth()
+    {
+        var hwnd = WindowNative.GetWindowHandle(this);
+        if (hwnd == IntPtr.Zero)
+        {
+            return 0;
+        }
+
+        if (!GetWindowRect(hwnd, out var windowRect) || !GetClientRect(hwnd, out var clientRect))
+        {
+            return 0;
+        }
+
+        var windowWidth = Math.Max(0, windowRect.Right - windowRect.Left);
+        var clientWidth = Math.Max(0, clientRect.Right - clientRect.Left);
+        return Math.Max(0, windowWidth - clientWidth);
+    }
+
     [DllImport("user32.dll")]
     private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
 
@@ -124,6 +143,14 @@ public sealed partial class MainWindow
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfo lpmi);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect lpRect);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetClientRect(IntPtr hWnd, out NativeRect lpRect);
 
     [DllImport("clipman_uia_bridge.dll", CallingConvention = CallingConvention.StdCall)]
     private static extern int GetFocusCaretScreenPoint(out int x, out int y);

@@ -22,6 +22,8 @@ public sealed partial class MainWindow : Window
     private const int RecentHotkeySlotCount = 9;
     private const double RightPanelSlideOffset = 28;
     private const int RightPanelAnimationDurationMs = 180;
+    private const double MainPaneExpandedColumnSpacing = 12;
+    private const double DetailsColumnExpandedMinWidth = 340;
 
     private readonly AppSettingsService _settingsService = new();
     private readonly EsentClipboardHistoryService _repository = new();
@@ -42,6 +44,8 @@ public sealed partial class MainWindow : Window
     private bool _isWindowClosed;
     private bool _isRightPanelVisible = true;
     private bool _isRightPanelAnimating;
+    private int _expandedWindowWidth;
+    private double _expandedHistoryPaneWidth = double.NaN;
 
     public MainWindow()
     {
@@ -952,17 +956,31 @@ public sealed partial class MainWindow : Window
         {
             if (_isRightPanelVisible)
             {
+                var leftPaneWidth = Math.Max(GetLeftPaneRuntimeWidth(), HistoryColumn.MinWidth);
+                _expandedWindowWidth = AppWindow.Size.Width;
+                _expandedHistoryPaneWidth = leftPaneWidth;
                 await AnimateRightPanelAsync(show: false);
                 RightPanelHost.Visibility = Visibility.Collapsed;
+                DetailsColumn.MinWidth = 0;
                 DetailsColumn.Width = new GridLength(0);
-                HistoryColumn.Width = new GridLength(1, GridUnitType.Star);
+                MainContentGrid.ColumnSpacing = 0;
+                HistoryColumn.Width = new GridLength(leftPaneWidth);
+                ResizeWindowWidth(GetMinimumWindowWidth());
                 _isRightPanelVisible = false;
                 UpdateRightPanelToggleIcon();
                 return;
             }
 
-            HistoryColumn.Width = new GridLength(420);
+            var restoredLeftPaneWidth = Math.Max(
+                double.IsNaN(_expandedHistoryPaneWidth) ? GetLeftPaneRuntimeWidth() : _expandedHistoryPaneWidth,
+                HistoryColumn.MinWidth);
+            DetailsColumn.MinWidth = DetailsColumnExpandedMinWidth;
+            MainContentGrid.ColumnSpacing = MainPaneExpandedColumnSpacing;
+            HistoryColumn.Width = new GridLength(restoredLeftPaneWidth);
             DetailsColumn.Width = new GridLength(1, GridUnitType.Star);
+            ResizeWindowWidth(Math.Max(
+                _expandedWindowWidth,
+                GetMinimumWindowWidth() + DipToPhysicalPixels(DetailsColumnExpandedMinWidth + MainPaneExpandedColumnSpacing)));
             RightPanelHost.Visibility = Visibility.Visible;
             Root.UpdateLayout();
             await AnimateRightPanelAsync(show: true);
@@ -1025,4 +1043,52 @@ public sealed partial class MainWindow : Window
     private FrameworkElement? GetRightPanelToggleButton() => Root.FindName("RightPanelToggleButton") as FrameworkElement;
 
     private FontIcon? GetRightPanelToggleIcon() => Root.FindName("RightPanelToggleIcon") as FontIcon;
+
+    private double GetLeftPaneRuntimeWidth()
+    {
+        if (HistoryPaneHost.ActualWidth > 0)
+        {
+            return HistoryPaneHost.ActualWidth;
+        }
+
+        if (HistoryColumn.ActualWidth > 0)
+        {
+            return HistoryColumn.ActualWidth;
+        }
+
+        if (HistoryColumn.Width.GridUnitType == GridUnitType.Pixel && HistoryColumn.Width.Value > 0)
+        {
+            return HistoryColumn.Width.Value;
+        }
+
+        return HistoryColumn.MinWidth;
+    }
+
+    private int GetMinimumWindowWidth() =>
+        DipToPhysicalPixels(GetLeftPaneRuntimeWidth() + MainContentGrid.Padding.Left + MainContentGrid.Padding.Right) + GetWindowFrameWidth();
+
+    private int DipToPhysicalPixels(double dipWidth)
+    {
+        var scale = Content is FrameworkElement { XamlRoot: not null } root
+            ? root.XamlRoot.RasterizationScale
+            : 1.0;
+
+        return (int)Math.Ceiling(dipWidth * scale);
+    }
+
+    private void ResizeWindowWidth(int width)
+    {
+        if (width <= 0)
+        {
+            return;
+        }
+
+        var current = AppWindow.Size;
+        if (current.Width == width)
+        {
+            return;
+        }
+
+        AppWindow.Resize(new SizeInt32(width, current.Height));
+    }
 }
