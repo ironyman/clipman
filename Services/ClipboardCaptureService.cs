@@ -166,10 +166,6 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
         SourceContext sourceContext)
     {
         var pageUrl = sourceContext.PageUrl;
-        if (string.IsNullOrWhiteSpace(pageUrl) && !string.IsNullOrWhiteSpace(contentText))
-        {
-            pageUrl = ExtractUrl(contentText);
-        }
 
         var domain = sourceContext.Domain;
         if (string.IsNullOrWhiteSpace(domain) && Uri.TryCreate(pageUrl, UriKind.Absolute, out var uri))
@@ -201,11 +197,7 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
 
     private static ClipboardClip ApplySourceContext(ClipboardClip clip, SourceContext sourceContext)
     {
-        var pageUrl = sourceContext.PageUrl;
-        if (string.IsNullOrWhiteSpace(pageUrl))
-        {
-            pageUrl = clip.SourceUrl ?? ExtractUrl(clip.ContentText ?? string.Empty);
-        }
+        var pageUrl = sourceContext.PageUrl ?? clip.SourceUrl;
 
         var domain = sourceContext.Domain;
         if (string.IsNullOrWhiteSpace(domain) && Uri.TryCreate(pageUrl, UriKind.Absolute, out var uri))

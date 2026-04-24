@@ -340,6 +340,37 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
         }
     }
 
+    public async Task UpdateTextAsync(string id, string title, string preview, string contentText, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            using var session = new Session(_instance);
+            var dbid = OpenDatabase(session);
+            using var table = new Table(session, dbid, TableName, OpenTableGrbit.None);
+            var columns = Columns(session, table);
+
+            Api.JetSetCurrentIndex(session, table, "primary");
+            Api.MakeKey(session, table, id, Encoding.Unicode, MakeKeyGrbit.NewKey);
+            if (!Api.TrySeek(session, table, SeekGrbit.SeekEQ))
+            {
+                return;
+            }
+
+            using var transaction = new Transaction(session);
+            using var update = new Update(session, table, JET_prep.Replace);
+            SetText(session, table, columns["Title"], title);
+            SetText(session, table, columns["Preview"], preview);
+            SetText(session, table, columns["ContentText"], contentText);
+            update.Save();
+            transaction.Commit(CommitTransactionGrbit.LazyFlush);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private static IDictionary<string, JET_COLUMNID> Columns(Session session, JET_TABLEID table) =>
         Api.GetColumnDictionary(session, table);
 

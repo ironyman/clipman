@@ -124,4 +124,7 @@ public sealed class DesignClipboardHistoryService : IClipboardHistoryService
 
     public Task DeleteAsync(string id, CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
+
+    public Task UpdateTextAsync(string id, string title, string preview, string contentText, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
 }

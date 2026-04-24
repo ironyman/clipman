@@ -49,4 +49,7 @@ public sealed class ClipboardHistoryService : IClipboardHistoryService
 
     public Task DeleteAsync(string id, CancellationToken cancellationToken = default) =>
         _repository.DeleteAsync(id, cancellationToken);
+
+    public Task UpdateTextAsync(string id, string title, string preview, string contentText, CancellationToken cancellationToken = default) =>
+        _repository.UpdateTextAsync(id, title, preview, contentText, cancellationToken);
 }

@@ -31,8 +31,12 @@ public sealed partial class MainWindow : Window
     private const int IdiApplication = 0x7F00;
     private const uint InputKeyboard = 1;
     private const uint KeyEventfKeyUp = 0x0002;
+    private const uint KeyEventfScanCode = 0x0008;
     private const ushort VkControl = 0x11;
+    private const ushort VkRControl = 0xA3;
     private const ushort VkV = 0x56;
+    private const uint MapvkVkToVsc = 0;
+    private const uint WmPaste = 0x0302;
     private const uint MonitorDefaultToNearest = 0x00000002;
     private const uint MfString = 0x00000000;
     private const uint MfSeparator = 0x00000800;
@@ -57,6 +61,9 @@ public sealed partial class MainWindow : Window
     private bool _trayIconAdded;
     private FocusSnapshot _lastHotkeyFocus = FocusSnapshot.Empty;
     private bool _isExiting;
+    private bool _isEditingTextClip;
+    private bool _isRecordingClipboardText;
+    private string? _recordingClipId;
 
     public MainWindow()
     {
@@ -68,6 +75,7 @@ public sealed partial class MainWindow : Window
         _clipboardListenerService = new ClipboardListenerService(_historyService);
         _viewModel = new MainViewModel(_historyService);
         Root.DataContext = _viewModel;
+        _historyService.ClipAdded += HistoryService_ClipAdded;
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(DragRegion);
@@ -83,15 +91,14 @@ public sealed partial class MainWindow : Window
         UpdateTitleBarInsets();
 
         _clipboardListenerService.Start();
-        Activated += MainWindow_Activated;
         Closed += MainWindow_Closed;
 
         HideMainWindow();
+        _ = InitializeAsync();
     }
 
-    private async void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
+    private async Task InitializeAsync()
     {
-        Activated -= MainWindow_Activated;
         await _viewModel.LoadAsync();
         await _clipboardListenerService.CaptureNowAsync();
     }
@@ -126,8 +133,17 @@ public sealed partial class MainWindow : Window
 
     private void HotKeyService_Pressed(object? sender, EventArgs e)
     {
-        _lastHotkeyFocus = CaptureFocusSnapshot();
-        DispatcherQueue.TryEnqueue(() => ShowMainWindow(centerOnFocusWindow: true));
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (IsMainWindowVisible())
+            {
+                HideMainWindow();
+                return;
+            }
+
+            _lastHotkeyFocus = CaptureFocusSnapshot();
+            ShowMainWindow(centerOnFocusWindow: true, clearSearch: true);
+        });
     }
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e)
@@ -204,6 +220,16 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private void HistoryListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_isEditingTextClip)
+        {
+            return;
+        }
+
+        ExitEditMode();
+    }
+
     private async void HistoryScrollViewer_ViewChanged(object? sender, ScrollViewerViewChangedEventArgs e)
     {
         if (_historyScrollViewer is null || !_viewModel.HasMore || _viewModel.IsLoading)
@@ -226,7 +252,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        ShowMainWindow(centerOnFocusWindow: false);
+        ShowMainWindow(centerOnFocusWindow: false, clearSearch: false);
     }
 
     private void HideMainWindow()
@@ -234,7 +260,7 @@ public sealed partial class MainWindow : Window
         ShowWindow(WindowNative.GetWindowHandle(this), SwHide);
     }
 
-    private void ShowMainWindow(bool centerOnFocusWindow)
+    private void ShowMainWindow(bool centerOnFocusWindow, bool clearSearch)
     {
         if (centerOnFocusWindow)
         {
@@ -244,7 +270,7 @@ public sealed partial class MainWindow : Window
         ShowWindow(WindowNative.GetWindowHandle(this), SwShow);
         Activate();
         SetForegroundWindow(WindowNative.GetWindowHandle(this));
-        FocusSearchBox();
+        FocusSearchBox(clearSearch);
     }
 
     private bool IsMainWindowVisible() => IsWindowVisible(WindowNative.GetWindowHandle(this));
@@ -256,13 +282,21 @@ public sealed partial class MainWindow : Window
 
     private void UpdateTitleBarInsets()
     {
-        TitleLeftPanel.Margin = new Thickness(AppWindow.TitleBar.LeftInset + 4, 0, 0, 0);
+        TitleLeftPanel.Margin = new Thickness(0, 0, 0, 0);
         TitleActionsPanel.Margin = new Thickness(0, 0, AppWindow.TitleBar.RightInset + 2, 0);
     }
 
-    private void FocusSearchBox()
+    private void FocusSearchBox(bool clearSearch)
     {
-        _ = DispatcherQueue.TryEnqueue(() => SearchBox.Focus(FocusState.Programmatic));
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            if (clearSearch)
+            {
+                SearchBox.Text = string.Empty;
+            }
+
+            SearchBox.Focus(FocusState.Programmatic);
+        });
     }
 
     private async void ShowClipInfo_Click(object sender, RoutedEventArgs e)
@@ -311,6 +345,86 @@ public sealed partial class MainWindow : Window
         await dialog.ShowAsync();
     }
 
+    private void EditClip_Click(object sender, RoutedEventArgs e)
+    {
+        var clip = _viewModel.SelectedClip;
+        if (!CanEditClipText(clip))
+        {
+            return;
+        }
+
+        var selectedClip = clip!;
+        _isEditingTextClip = true;
+        _isRecordingClipboardText = false;
+        _recordingClipId = selectedClip.Id;
+        RecordButtonText.Text = "Record";
+        SelectedPreviewTextBox.Text = selectedClip.ContentText ?? selectedClip.Preview ?? string.Empty;
+        SelectedPreviewTextBox.Visibility = Visibility.Visible;
+        SelectedPreviewTextBlock.Visibility = Visibility.Collapsed;
+        EditButtonsPanel.Visibility = Visibility.Visible;
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            SelectedPreviewTextBox.Focus(FocusState.Programmatic);
+            SelectedPreviewTextBox.Select(SelectedPreviewTextBox.Text.Length, 0);
+        });
+    }
+
+    private async void SaveEdit_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_isEditingTextClip)
+        {
+            return;
+        }
+
+        var clip = _viewModel.SelectedClip;
+        if (!CanEditClipText(clip))
+        {
+            ExitEditMode();
+            return;
+        }
+
+        var updatedText = SelectedPreviewTextBox.Text ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(updatedText))
+        {
+            return;
+        }
+
+        updatedText = NormalizeText(updatedText);
+        var title = BuildTitleFromText(updatedText, clip!.Kind);
+        var preview = BuildPreviewText(updatedText);
+
+        await _historyService.UpdateTextAsync(clip.Id, title, preview, updatedText);
+        await RefreshViewAndRestoreSelectionAsync(clip.Id);
+        ExitEditMode();
+    }
+
+    private void CancelEdit_Click(object sender, RoutedEventArgs e)
+    {
+        ExitEditMode();
+    }
+
+    private void ToggleRecord_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_isEditingTextClip || _viewModel.SelectedClip is null)
+        {
+            return;
+        }
+
+        if (_recordingClipId is null || !_recordingClipId.Equals(_viewModel.SelectedClip.Id, StringComparison.Ordinal))
+        {
+            _recordingClipId = _viewModel.SelectedClip.Id;
+        }
+
+        _isRecordingClipboardText = !_isRecordingClipboardText;
+        _viewModel.SetLiveInsertSuppressed(_isRecordingClipboardText);
+        RecordButtonText.Text = _isRecordingClipboardText ? "Stop" : "Record";
+
+        if (!_isRecordingClipboardText)
+        {
+            _ = _viewModel.RefreshAsync();
+        }
+    }
+
     private async void TogglePin_Click(object sender, RoutedEventArgs e)
     {
         var clip = _viewModel.SelectedClip;
@@ -347,17 +461,25 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var snapshot = _lastHotkeyFocus;
-        if (snapshot.WindowHandle == IntPtr.Zero)
-        {
-            return;
-        }
+        var snapshot = _lastHotkeyFocus.WindowHandle != IntPtr.Zero
+            ? _lastHotkeyFocus
+            : CaptureFocusSnapshot();
 
         HideMainWindow();
         await Task.Delay(90);
-        RestoreFocusSnapshot(snapshot);
+        if (snapshot.WindowHandle != IntPtr.Zero)
+        {
+            RestoreFocusSnapshot(snapshot);
+        }
+
         await Task.Delay(80);
+        var targetControl = GetTargetControlHandle(snapshot);
         SendCtrlV();
+        if (targetControl != IntPtr.Zero)
+        {
+            await Task.Delay(50);
+            _ = TrySendPasteMessage(targetControl);
+        }
     }
 
     private void MainWindow_Closed(object sender, WindowEventArgs args)
@@ -366,6 +488,7 @@ public sealed partial class MainWindow : Window
         RemoveTrayIcon();
         _hotKeyService.Dispose();
         _repository.Dispose();
+        _historyService.ClipAdded -= HistoryService_ClipAdded;
         _hotKeyService.WindowMessageReceived -= HotKeyService_WindowMessageReceived;
         AppWindow.Changed -= AppWindow_Changed;
         if (_isExiting)
@@ -464,12 +587,34 @@ public sealed partial class MainWindow : Window
 
             Clipboard.SetContent(package);
             Clipboard.Flush();
-            return true;
+            return await WaitForClipboardReadyAsync();
         }
         catch
         {
             return false;
         }
+    }
+
+    private static async Task<bool> WaitForClipboardReadyAsync()
+    {
+        for (var i = 0; i < 8; i++)
+        {
+            try
+            {
+                var content = Clipboard.GetContent();
+                if (content is not null && content.AvailableFormats.Count > 0)
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+            }
+
+            await Task.Delay(15);
+        }
+
+        return false;
     }
 
     private static async Task<IReadOnlyList<IStorageItem>> ResolveStorageItemsAsync(string referencePath)
@@ -574,19 +719,86 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private static void SendCtrlV()
+    private IntPtr GetTargetControlHandle(FocusSnapshot snapshot)
     {
-        var inputs = new[]
+        if (snapshot.FocusHandle != IntPtr.Zero && IsWindow(snapshot.FocusHandle))
         {
-            CreateKeyboardInput(VkControl, 0),
-            CreateKeyboardInput(VkV, 0),
-            CreateKeyboardInput(VkV, KeyEventfKeyUp),
-            CreateKeyboardInput(VkControl, KeyEventfKeyUp)
+            return snapshot.FocusHandle;
+        }
+
+        if (snapshot.WindowHandle == IntPtr.Zero || !IsWindow(snapshot.WindowHandle))
+        {
+            return IntPtr.Zero;
+        }
+
+        var targetThread = GetWindowThreadProcessId(snapshot.WindowHandle, out _);
+        if (targetThread == 0)
+        {
+            return IntPtr.Zero;
+        }
+
+        var info = new GuiThreadInfo
+        {
+            cbSize = (uint)Marshal.SizeOf<GuiThreadInfo>()
         };
-        _ = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>());
+        return GetGUIThreadInfo(targetThread, ref info) ? info.hwndFocus : IntPtr.Zero;
     }
 
-    private static Input CreateKeyboardInput(ushort virtualKey, uint flags) =>
+    private static bool TrySendPasteMessage(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        var result = SendMessageTimeout(
+            hwnd,
+            WmPaste,
+            IntPtr.Zero,
+            IntPtr.Zero,
+            0x0002, // SMTO_ABORTIFHUNG
+            250,
+            out _);
+
+        return result != IntPtr.Zero;
+    }
+
+    private static bool SendCtrlV()
+    {
+        var foreground = GetForegroundWindow();
+        var foregroundThreadId = foreground != IntPtr.Zero
+            ? GetWindowThreadProcessId(foreground, out _)
+            : 0u;
+        var myThreadId = GetCurrentThreadId();
+
+        var attached = false;
+        if (foregroundThreadId != 0 && foregroundThreadId != myThreadId)
+        {
+            attached = AttachThreadInput(myThreadId, foregroundThreadId, true);
+        }
+
+        var controlScan = (ushort)MapVirtualKey(VkRControl, MapvkVkToVsc);
+        var keyScan = (ushort)MapVirtualKey(VkV, MapvkVkToVsc);
+
+        var inputs = new[]
+        {
+            CreateKeyboardInput(VkControl, controlScan, KeyEventfScanCode),
+            CreateKeyboardInput(VkV, keyScan, KeyEventfScanCode),
+            CreateKeyboardInput(VkV, keyScan, KeyEventfKeyUp | KeyEventfScanCode),
+            CreateKeyboardInput(VkControl, controlScan, KeyEventfKeyUp | KeyEventfScanCode)
+        };
+
+        var sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>());
+
+        if (attached)
+        {
+            AttachThreadInput(myThreadId, foregroundThreadId, false);
+        }
+
+        return sent == inputs.Length;
+    }
+
+    private static Input CreateKeyboardInput(ushort virtualKey, ushort scanCode, uint flags) =>
         new()
         {
             type = InputKeyboard,
@@ -595,7 +807,7 @@ public sealed partial class MainWindow : Window
                 ki = new KeybdInput
                 {
                     wVk = virtualKey,
-                    wScan = 0,
+                    wScan = scanCode,
                     dwFlags = flags,
                     time = 0,
                     dwExtraInfo = IntPtr.Zero
@@ -625,6 +837,9 @@ public sealed partial class MainWindow : Window
     private static extern uint GetCurrentThreadId();
 
     [DllImport("user32.dll")]
+    private static extern uint MapVirtualKey(uint uCode, uint uMapType);
+
+    [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
 
@@ -648,6 +863,16 @@ public sealed partial class MainWindow : Window
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, Input[] pInputs, int cbSize);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SendMessageTimeout(
+        IntPtr hWnd,
+        uint msg,
+        IntPtr wParam,
+        IntPtr lParam,
+        uint fuFlags,
+        uint uTimeout,
+        out IntPtr lpdwResult);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr LoadIcon(IntPtr hInstance, IntPtr lpIconName);
@@ -728,7 +953,6 @@ public sealed partial class MainWindow : Window
             _ = AppendMenu(menu, MfString, CmExit, "Exit");
 
             _ = GetCursorPos(out var cursor);
-            _ = SetForegroundWindow(WindowNative.GetWindowHandle(this));
             var selected = TrackPopupMenuEx(
                 menu,
                 TpmLeftAlign | TpmBottomAlign | TpmRightButton | TpmReturnCmd,
@@ -783,11 +1007,25 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
+            var snapshot = _lastHotkeyFocus.WindowHandle != IntPtr.Zero
+                ? _lastHotkeyFocus
+                : CaptureFocusSnapshot();
+
             HideMainWindow();
             await Task.Delay(90);
-            RestoreFocusSnapshot(_lastHotkeyFocus);
+            if (snapshot.WindowHandle != IntPtr.Zero)
+            {
+                RestoreFocusSnapshot(snapshot);
+            }
+
             await Task.Delay(80);
+            var targetControl = GetTargetControlHandle(snapshot);
             SendCtrlV();
+            //if (targetControl != IntPtr.Zero)
+            //{
+            //    await Task.Delay(50);
+            //    _ = TrySendPasteMessage(targetControl);
+            //}
         });
     }
 
@@ -938,4 +1176,99 @@ public sealed partial class MainWindow : Window
     {
         public static FocusSnapshot Empty { get; } = new(IntPtr.Zero, IntPtr.Zero);
     }
+
+    private void ExitEditMode()
+    {
+        var wasRecording = _isRecordingClipboardText;
+        _isEditingTextClip = false;
+        _isRecordingClipboardText = false;
+        _recordingClipId = null;
+        _viewModel.SetLiveInsertSuppressed(false);
+        RecordButtonText.Text = "Record";
+        SelectedPreviewTextBox.Visibility = Visibility.Collapsed;
+        SelectedPreviewTextBlock.Visibility = Visibility.Visible;
+        EditButtonsPanel.Visibility = Visibility.Collapsed;
+
+        if (wasRecording)
+        {
+            _ = _viewModel.RefreshAsync();
+        }
+    }
+
+    private static bool CanEditClipText(ClipboardClip? clip) =>
+        clip is not null &&
+        !string.IsNullOrWhiteSpace(clip.ContentText) &&
+        (clip.Kind == ClipKind.Text || clip.Kind == ClipKind.Code || clip.Kind == ClipKind.Url || clip.Kind == ClipKind.Html);
+
+    private static string NormalizeText(string text) =>
+        text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\n", Environment.NewLine, StringComparison.Ordinal);
+
+    private static string BuildTitleFromText(string text, ClipKind kind)
+    {
+        var firstLine = text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
+        if (string.IsNullOrWhiteSpace(firstLine))
+        {
+            return kind == ClipKind.Url ? "URL" : "Text";
+        }
+
+        return firstLine.Length <= 80 ? firstLine : $"{firstLine[..77]}...";
+    }
+
+    private static string BuildPreviewText(string text)
+    {
+        var compact = string.Join(" ", text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Select(line => line.Trim()));
+        return compact.Length <= 240 ? compact : $"{compact[..237]}...";
+    }
+
+    private void HistoryService_ClipAdded(object? sender, ClipboardClip clip)
+    {
+        if (!_isRecordingClipboardText || !_isEditingTextClip || string.IsNullOrWhiteSpace(_recordingClipId))
+        {
+            return;
+        }
+
+        if (clip.Id.Equals(_recordingClipId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (!IsRecordableTextClip(clip))
+        {
+            return;
+        }
+
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!_isRecordingClipboardText || !_isEditingTextClip || _viewModel.SelectedClip is null)
+            {
+                return;
+            }
+
+            if (!_viewModel.SelectedClip.Id.Equals(_recordingClipId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var snippet = NormalizeText(clip.ContentText!);
+            if (string.IsNullOrWhiteSpace(snippet))
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(SelectedPreviewTextBox.Text))
+            {
+                SelectedPreviewTextBox.Text += $"{Environment.NewLine}{Environment.NewLine}{snippet}";
+            }
+            else
+            {
+                SelectedPreviewTextBox.Text = snippet;
+            }
+
+            SelectedPreviewTextBox.Select(SelectedPreviewTextBox.Text.Length, 0);
+        });
+    }
+
+    private static bool IsRecordableTextClip(ClipboardClip clip) =>
+        (clip.Kind == ClipKind.Text || clip.Kind == ClipKind.Code || clip.Kind == ClipKind.Url) &&
+        !string.IsNullOrWhiteSpace(clip.ContentText);
 }

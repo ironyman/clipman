@@ -19,6 +19,7 @@ public sealed class MainViewModel : ObservableObject
     private bool _isLoading;
     private bool _hasMore = true;
     private CancellationTokenSource? _searchDebounceCts;
+    private bool _suppressRealtimeClipInsert;
 
     public MainViewModel(IClipboardHistoryService clipboardHistoryService)
     {
@@ -90,7 +91,7 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    public string FilterLabel => ShowPinnedOnly ? "Pinned clips" : SelectedKind?.ToString() ?? "All clips";
+    public string FilterLabel => ShowPinnedOnly ? "Pinned clips" : SelectedKind?.ToString() ?? string.Empty;
 
     public int SavedCount
     {
@@ -166,6 +167,11 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    public void SetLiveInsertSuppressed(bool suppressed)
+    {
+        _suppressRealtimeClipInsert = suppressed;
+    }
+
     private async Task LoadPageAsync()
     {
         var page = await _clipboardHistoryService.GetPageAsync(
@@ -187,18 +193,6 @@ public sealed class MainViewModel : ObservableObject
         PinnedCount = VisibleClips.Count(clip => clip.IsPinned);
     }
 
-    private void ClipboardHistoryService_ClipAdded(object? sender, ClipboardClip clip)
-    {
-        SavedCount++;
-        if ((!ShowPinnedOnly || clip.IsPinned) && (SelectedKind is null || clip.Kind == SelectedKind))
-        {
-            VisibleClips.Insert(0, clip);
-            _loadedCount++;
-            ReorderVisibleClips();
-            SelectedClip = VisibleClips.FirstOrDefault(item => item.Id == clip.Id) ?? clip;
-        }
-    }
-
     private async Task DebounceSearchRefreshAsync()
     {
         _searchDebounceCts?.Cancel();
@@ -211,6 +205,25 @@ public sealed class MainViewModel : ObservableObject
         }
         catch (TaskCanceledException)
         {
+        }
+    }
+
+    private void ClipboardHistoryService_ClipAdded(object? sender, ClipboardClip clip)
+    {
+        SavedCount++;
+
+        if (_suppressRealtimeClipInsert)
+        {
+            return;
+        }
+
+        if ((!ShowPinnedOnly || clip.IsPinned) && (SelectedKind is null || clip.Kind == SelectedKind))
+        {
+            VisibleClips.Insert(0, clip);
+            _loadedCount++;
+            ReorderVisibleClips();
+            SelectedClip = VisibleClips.FirstOrDefault(item => item.Id == clip.Id) ?? clip;
+            PinnedCount = VisibleClips.Count(item => item.IsPinned);
         }
     }
 

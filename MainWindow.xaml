@@ -50,56 +50,11 @@
 
         <Grid Grid.Row="1" Padding="16,8,16,16" ColumnSpacing="12">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="220" />
                 <ColumnDefinition Width="420" MinWidth="320" />
                 <ColumnDefinition Width="*" MinWidth="340" />
             </Grid.ColumnDefinitions>
 
-            <NavigationView
-                IsBackButtonVisible="Collapsed"
-                IsSettingsVisible="False"
-                PaneDisplayMode="LeftMinimal"
-                IsPaneToggleButtonVisible="False"
-                OpenPaneLength="220"
-                IsPaneOpen="True"
-                SelectionChanged="NavigationView_SelectionChanged">
-                <NavigationView.MenuItems>
-                    <NavigationViewItem Content="History" IsSelected="True" Tag="History">
-                        <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE823;" />
-                        </NavigationViewItem.Icon>
-                    </NavigationViewItem>
-                    <NavigationViewItem Content="Pinned" Tag="Pinned">
-                        <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE718;" />
-                        </NavigationViewItem.Icon>
-                    </NavigationViewItem>
-                    <NavigationViewItem Content="Groups" Tag="Groups">
-                        <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE8F1;" />
-                        </NavigationViewItem.Icon>
-                    </NavigationViewItem>
-                    <NavigationViewItem Content="Sync" Tag="Sync">
-                        <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE895;" />
-                        </NavigationViewItem.Icon>
-                    </NavigationViewItem>
-                    <NavigationViewItem Content="Stats" Tag="Stats">
-                        <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE9D2;" />
-                        </NavigationViewItem.Icon>
-                    </NavigationViewItem>
-                </NavigationView.MenuItems>
-                <NavigationView.FooterMenuItems>
-                    <NavigationViewItem Content="Options" Tag="Options">
-                        <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE713;" />
-                        </NavigationViewItem.Icon>
-                    </NavigationViewItem>
-                </NavigationView.FooterMenuItems>
-            </NavigationView>
-
-            <Grid Grid.Column="1" RowSpacing="12">
+            <Grid Grid.Column="0" RowSpacing="12">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
@@ -142,6 +97,7 @@
                     ItemsSource="{Binding VisibleClips}"
                     SelectedItem="{Binding SelectedClip, Mode=TwoWay}"
                     SelectionMode="Single"
+                    SelectionChanged="HistoryListView_SelectionChanged"
                     Loaded="HistoryListView_Loaded">
                     <ListView.ItemContainerStyle>
                         <Style TargetType="ListViewItem">
@@ -190,7 +146,7 @@
 
             </Grid>
 
-            <Grid Grid.Column="2" RowSpacing="12">
+            <Grid Grid.Column="1" RowSpacing="12">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -223,6 +179,7 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
                         <StackPanel Spacing="6">
@@ -239,19 +196,57 @@
                             </StackPanel>
                         </StackPanel>
 
-                        <ScrollViewer Grid.Row="1">
-                            <TextBlock
-                                Text="{Binding SelectedClip.Preview}"
-                                FontSize="15"
+                        <Grid Grid.Row="1">
+                            <ScrollViewer x:Name="PreviewScrollViewer">
+                                <TextBlock
+                                    x:Name="SelectedPreviewTextBlock"
+                                    Text="{Binding SelectedClip.Preview}"
+                                    FontSize="15"
+                                    TextWrapping="Wrap"
+                                    IsTextSelectionEnabled="True" />
+                            </ScrollViewer>
+                            <TextBox
+                                x:Name="SelectedPreviewTextBox"
+                                Visibility="Collapsed"
+                                AcceptsReturn="True"
                                 TextWrapping="Wrap"
-                                IsTextSelectionEnabled="True" />
-                        </ScrollViewer>
+                                VerticalAlignment="Stretch"
+                                HorizontalAlignment="Stretch"
+                                MinHeight="240" />
+                        </Grid>
+
+                        <StackPanel
+                            x:Name="EditButtonsPanel"
+                            Grid.Row="2"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            Visibility="Collapsed">
+                            <Button Click="SaveEdit_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE73E;" />
+                                    <TextBlock Text="Save" />
+                                </StackPanel>
+                            </Button>
+                            <Button Click="CancelEdit_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE711;" />
+                                    <TextBlock Text="Cancel" />
+                                </StackPanel>
+                            </Button>
+                            <Button Click="ToggleRecord_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE768;" />
+                                    <TextBlock x:Name="RecordButtonText" Text="Record" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
 
                     </Grid>
                 </Border>
 
                 <Grid Grid.Row="2" ColumnSpacing="10">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
@@ -276,13 +271,19 @@
                             <TextBlock Text="Details" />
                         </StackPanel>
                     </Button>
-                    <Button Grid.Column="3" HorizontalAlignment="Stretch" Click="TogglePin_Click">
+                    <Button Grid.Column="3" HorizontalAlignment="Stretch" Click="EditClip_Click">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE70F;" />
+                            <TextBlock Text="Edit" />
+                        </StackPanel>
+                    </Button>
+                    <Button Grid.Column="4" HorizontalAlignment="Stretch" Click="TogglePin_Click">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE718;" />
                             <TextBlock Text="Pin" />
                         </StackPanel>
                     </Button>
-                    <Button Grid.Column="4" HorizontalAlignment="Stretch" Click="DeleteClip_Click">
+                    <Button Grid.Column="5" HorizontalAlignment="Stretch" Click="DeleteClip_Click">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE74D;" />
                             <TextBlock Text="Delete" />

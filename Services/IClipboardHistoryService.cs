@@ -21,4 +21,6 @@ public interface IClipboardHistoryService
     Task SetPinnedAsync(string id, bool isPinned, CancellationToken cancellationToken = default);
 
     Task DeleteAsync(string id, CancellationToken cancellationToken = default);
+
+    Task UpdateTextAsync(string id, string title, string preview, string contentText, CancellationToken cancellationToken = default);
 }
