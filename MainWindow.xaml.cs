@@ -8,6 +8,8 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using System.Collections.Specialized;
+using System.Collections.ObjectModel;
 using System.Runtime.InteropServices;
 using Windows.Graphics;
 using Windows.System;
@@ -47,10 +49,13 @@ public sealed partial class MainWindow : Window
     private bool _isRightPanelAnimating;
     private int _expandedWindowWidth;
     private double _expandedHistoryPaneWidth = double.NaN;
+    private readonly ObservableCollection<SearchBadge> _searchBadges = [];
+    private bool _isUpdatingSearchText;
 
     public MainWindow()
     {
         InitializeComponent();
+        SearchBadgesItemsControl.ItemsSource = _searchBadges;
 
         _hotKeySettings = _settingsService.LoadHotKey();
         _hotKeySettings.StartOnWindowsBoot = IsStartupEnabled();
@@ -59,6 +64,7 @@ public sealed partial class MainWindow : Window
         _clipboardListenerService = new ClipboardListenerService(_historyService);
         _viewModel = new MainViewModel(_historyService);
         Root.DataContext = _viewModel;
+        _viewModel.VisibleClips.CollectionChanged += VisibleClips_CollectionChanged;
         _historyService.ClipAdded += HistoryService_ClipAdded;
 
         ExtendsContentIntoTitleBar = true;
@@ -91,6 +97,7 @@ public sealed partial class MainWindow : Window
         Closed += MainWindow_Closed;
 
         HideMainWindow();
+        ApplyCompositeSearchQuery();
         _ = InitializeAsync();
     }
 
@@ -172,7 +179,109 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        if (e.Key == VirtualKey.Space && TryCreateBadgeFromInput())
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == VirtualKey.Back && TryRemoveLastBadgeAtSearchStart())
+        {
+            e.Handled = true;
+            return;
+        }
+
         TryHandleActiveWindowHotKeys(e);
+    }
+
+    private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    {
+        if (_isUpdatingSearchText)
+        {
+            return;
+        }
+
+        ApplyCompositeSearchQuery();
+    }
+
+    private async void AdvancedSearchButton_Click(object sender, RoutedEventArgs e)
+    {
+        var domains = _viewModel.VisibleClips
+            .Select(clip => clip.SourceDomain)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value)
+            .ToList();
+        var apps = _viewModel.VisibleClips
+            .Select(clip => clip.SourceApp)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value)
+            .ToList();
+        var tags = _viewModel.VisibleClips
+            .SelectMany(clip => (clip.Tags ?? string.Empty)
+                .Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value)
+            .ToList();
+
+        var urlBadge = _searchBadges.FirstOrDefault(badge => badge.Key.Equals("url", StringComparison.OrdinalIgnoreCase));
+        var appBadge = _searchBadges.FirstOrDefault(badge => badge.Key.Equals("app", StringComparison.OrdinalIgnoreCase));
+        var tagBadge = _searchBadges.FirstOrDefault(badge => badge.Key.Equals("tag", StringComparison.OrdinalIgnoreCase));
+
+        var urlCombo = new ComboBox { IsEditable = true, Width = 360, ItemsSource = domains, Text = urlBadge?.Value ?? string.Empty };
+        var appCombo = new ComboBox { IsEditable = true, Width = 360, ItemsSource = apps, Text = appBadge?.Value ?? string.Empty };
+        var tagCombo = new ComboBox { IsEditable = true, Width = 360, ItemsSource = tags, Text = tagBadge?.Value ?? string.Empty };
+
+        var form = new StackPanel { Spacing = 12 };
+        form.Children.Add(new TextBlock { Text = "URL domain" });
+        form.Children.Add(urlCombo);
+        form.Children.Add(new TextBlock { Text = "Source app (exe)" });
+        form.Children.Add(appCombo);
+        form.Children.Add(new TextBlock { Text = "Tag" });
+        form.Children.Add(tagCombo);
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot,
+            Title = "Advanced Search",
+            Content = form,
+            PrimaryButtonText = "Apply",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        SetOrRemoveBadge("url", ReadComboText(urlCombo));
+        SetOrRemoveBadge("app", ReadComboText(appCombo));
+        SetOrRemoveBadge("tag", ReadComboText(tagCombo));
+        RefreshSearchBadgesUi();
+        ApplyCompositeSearchQuery();
+    }
+
+    private void RemoveSearchBadgeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string token })
+        {
+            return;
+        }
+
+        var existing = _searchBadges.FirstOrDefault(badge => string.Equals(badge.Token, token, StringComparison.Ordinal));
+        if (existing is null)
+        {
+            return;
+        }
+
+        _searchBadges.Remove(existing);
+        RefreshSearchBadgesUi();
+        ApplyCompositeSearchQuery();
     }
 
     private void HistoryListView_KeyDown(object sender, KeyRoutedEventArgs e)
@@ -241,6 +350,154 @@ public sealed partial class MainWindow : Window
             e.Handled = true;
             return;
         }
+    }
+
+    private bool TryCreateBadgeFromInput()
+    {
+        var text = SearchBox.Text ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        var trimmed = text.TrimEnd();
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        var tokenStart = trimmed.LastIndexOf(' ') + 1;
+        var token = trimmed[tokenStart..];
+        if (!TryParseBadgeToken(token, out var badge))
+        {
+            return false;
+        }
+
+        var remaining = trimmed[..tokenStart].TrimEnd();
+        _isUpdatingSearchText = true;
+        SearchBox.Text = remaining;
+        _isUpdatingSearchText = false;
+        SetOrRemoveBadge(badge.Key, badge.Value);
+        RefreshSearchBadgesUi();
+        ApplyCompositeSearchQuery();
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            var textBox = FindVisualChild<TextBox>(SearchBox);
+            if (textBox is not null)
+            {
+                textBox.Select(remaining.Length, 0);
+            }
+        });
+        return true;
+    }
+
+    private bool TryRemoveLastBadgeAtSearchStart()
+    {
+        if (_searchBadges.Count == 0)
+        {
+            return false;
+        }
+
+        var textBox = FindVisualChild<TextBox>(SearchBox);
+        if (textBox is null || textBox.SelectionStart != 0 || textBox.SelectionLength != 0)
+        {
+            return false;
+        }
+
+        _searchBadges.RemoveAt(_searchBadges.Count - 1);
+        RefreshSearchBadgesUi();
+        ApplyCompositeSearchQuery();
+        return true;
+    }
+
+    private static bool TryParseBadgeToken(string token, out SearchBadge badge)
+    {
+        badge = default!;
+        var separator = token.IndexOf(':');
+        if (separator <= 0 || separator == token.Length - 1)
+        {
+            return false;
+        }
+
+        var key = token[..separator].Trim().ToLowerInvariant();
+        if (key is not ("url" or "app" or "tag"))
+        {
+            return false;
+        }
+
+        var rawValue = token[(separator + 1)..].Trim();
+        if (rawValue.Length == 0)
+        {
+            return false;
+        }
+
+        string decoded;
+        try
+        {
+            decoded = Uri.UnescapeDataString(rawValue);
+        }
+        catch
+        {
+            decoded = rawValue;
+        }
+
+        badge = new SearchBadge(key, decoded);
+        return true;
+    }
+
+    private void SetOrRemoveBadge(string key, string? value)
+    {
+        var normalized = value?.Trim() ?? string.Empty;
+        var existing = _searchBadges.FirstOrDefault(badge => badge.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+        if (normalized.Length == 0)
+        {
+            if (existing is not null)
+            {
+                _searchBadges.Remove(existing);
+            }
+
+            return;
+        }
+
+        var replacement = new SearchBadge(key, normalized);
+        if (existing is null)
+        {
+            _searchBadges.Add(replacement);
+            return;
+        }
+
+        var index = _searchBadges.IndexOf(existing);
+        _searchBadges[index] = replacement;
+    }
+
+    private void ApplyCompositeSearchQuery()
+    {
+        var freeText = (SearchBox.Text ?? string.Empty).Trim();
+        var badgeTokens = _searchBadges
+            .Select(badge => $"{badge.Key}:{Uri.EscapeDataString(badge.Value)}")
+            .ToList();
+        if (freeText.Length > 0)
+        {
+            badgeTokens.Insert(0, freeText);
+        }
+
+        _viewModel.SearchQuery = string.Join(' ', badgeTokens);
+        RefreshSearchBadgesUi();
+    }
+
+    private void RefreshSearchBadgesUi()
+    {
+        SearchBadgesItemsControl.Visibility = _searchBadges.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private static string ReadComboText(ComboBox combo)
+    {
+        if (!string.IsNullOrWhiteSpace(combo.Text))
+        {
+            return combo.Text.Trim();
+        }
+
+        return combo.SelectedItem?.ToString()?.Trim() ?? string.Empty;
     }
 
     private void MoveSelection(int delta)
@@ -462,6 +719,15 @@ public sealed partial class MainWindow : Window
     {
         _ = DispatcherQueue.TryEnqueue(() =>
         {
+            if (clearSearch)
+            {
+                _isUpdatingSearchText = true;
+                SearchBox.Text = string.Empty;
+                _isUpdatingSearchText = false;
+                _searchBadges.Clear();
+                ApplyCompositeSearchQuery();
+            }
+
             SearchBox.Focus(FocusState.Programmatic);
             _ = DispatcherQueue.TryEnqueue(() =>
             {
@@ -738,6 +1004,7 @@ public sealed partial class MainWindow : Window
     private void MainWindow_Closed(object sender, WindowEventArgs args)
     {
         _isWindowClosed = true;
+        _viewModel.VisibleClips.CollectionChanged -= VisibleClips_CollectionChanged;
         Root.ActualThemeChanged -= Root_ActualThemeChanged;
         _clipboardListenerService.Dispose();
         RemoveTrayIcon();
@@ -991,6 +1258,11 @@ public sealed partial class MainWindow : Window
         });
     }
 
+    private void VisibleClips_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        _ = DispatcherQueue.TryEnqueue(async () => await UpdateRecentSlotHintsAsync());
+    }
+
     private static bool IsRecordableTextClip(ClipboardClip clip) =>
         (clip.Kind == ClipKind.Text || clip.Kind == ClipKind.Code || clip.Kind == ClipKind.Url) &&
         !string.IsNullOrWhiteSpace(clip.ContentText);
@@ -1228,5 +1500,22 @@ public sealed partial class MainWindow : Window
         AppWindow.Move(new PointInt32(
             centerX - (width / 2),
             centerY - (current.Height / 2)));
+    }
+
+    private sealed class SearchBadge
+    {
+        public SearchBadge(string key, string value)
+        {
+            Key = key;
+            Value = value;
+        }
+
+        public string Key { get; }
+
+        public string Value { get; }
+
+        public string Token => $"{Key}:{Value}";
+
+        public string Label => $"{Key}:{Value}";
     }
 }

@@ -186,7 +186,7 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
         var columns = Columns(session, table);
         var clips = new List<ClipboardClip>(take);
         var skipped = 0;
-        var normalizedQuery = NormalizeSearchQuery(query);
+        var parsedQuery = ParseSearchQuery(query);
 
         Api.JetSetCurrentIndex(session, table, "copiedAt");
         if (!Api.TryMoveFirst(session, table))
@@ -197,7 +197,7 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
         do
         {
             var clip = ReadClip(session, table, columns);
-            if (Matches(clip, normalizedQuery, kind, pinnedOnly))
+            if (Matches(clip, parsedQuery, kind, pinnedOnly))
             {
                 if (skipped++ >= skip)
                 {
@@ -214,38 +214,110 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
         return clips;
     }
 
-    private static bool Matches(ClipboardClip clip, string? query, ClipKind? kind, bool pinnedOnly)
+    private static bool Matches(ClipboardClip clip, SearchQuery query, ClipKind? kind, bool pinnedOnly)
     {
         return (!pinnedOnly || clip.IsPinned) &&
                (kind is null || clip.Kind == kind) &&
-               (string.IsNullOrWhiteSpace(query) ||
-                clip.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                clip.Preview.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                (clip.ReferencePath?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (clip.ContentText?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (clip.SourceApp?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (clip.SourceWindowTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (clip.BrowserTabTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (clip.SourceUrl?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (clip.SourceDomain?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (clip.Tags?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
+               MatchesFreeText(clip, query.FreeText) &&
+               MatchesToken(clip.SourceUrl, clip.SourceDomain, query.Url) &&
+               MatchesToken(clip.SourceApp, null, query.App) &&
+               MatchesToken(clip.Tags, null, query.Tag);
     }
 
-    private static string? NormalizeSearchQuery(string? query)
+    private static bool MatchesFreeText(ClipboardClip clip, string? query)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
-            return null;
+            return true;
         }
 
-        var normalized = query.Trim();
-        if (normalized.StartsWith('#'))
-        {
-            normalized = normalized.TrimStart('#').Trim();
-        }
-
-        return normalized;
+        return clip.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+               clip.Preview.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+               (clip.ReferencePath?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+               (clip.ContentText?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+               (clip.SourceApp?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+               (clip.SourceWindowTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+               (clip.BrowserTabTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+               (clip.SourceUrl?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+               (clip.SourceDomain?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+               (clip.Tags?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false);
     }
+
+    private static bool MatchesToken(string? primary, string? secondary, string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return true;
+        }
+
+        return (primary?.Contains(token, StringComparison.OrdinalIgnoreCase) ?? false) ||
+               (secondary?.Contains(token, StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    private static SearchQuery ParseSearchQuery(string? query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return default;
+        }
+
+        var url = string.Empty;
+        var app = string.Empty;
+        var tag = string.Empty;
+        var freeTextTokens = new List<string>();
+
+        foreach (var token in query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var separator = token.IndexOf(':');
+            if (separator > 0 && separator < token.Length - 1)
+            {
+                var key = token[..separator].Trim().ToLowerInvariant();
+                var value = token[(separator + 1)..].Trim();
+                if (value.Length > 0)
+                {
+                    try
+                    {
+                        value = Uri.UnescapeDataString(value);
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (value.Length > 0)
+                {
+                    switch (key)
+                    {
+                        case "url":
+                            url = value;
+                            continue;
+                        case "app":
+                            app = value;
+                            continue;
+                        case "tag":
+                            tag = value;
+                            continue;
+                    }
+                }
+            }
+
+            freeTextTokens.Add(token);
+        }
+
+        var freeText = string.Join(' ', freeTextTokens).Trim();
+        if (freeText.StartsWith('#'))
+        {
+            freeText = freeText.TrimStart('#').Trim();
+        }
+
+        return new SearchQuery(
+            freeText.Length > 0 ? freeText : null,
+            url.Length > 0 ? url : null,
+            app.Length > 0 ? app : null,
+            tag.Length > 0 ? tag : null);
+    }
+
+    private readonly record struct SearchQuery(string? FreeText, string? Url, string? App, string? Tag);
 
     public async Task<bool> ExistsAsync(string id, CancellationToken cancellationToken = default)
     {
