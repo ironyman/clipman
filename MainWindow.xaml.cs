@@ -49,6 +49,7 @@ public sealed partial class MainWindow : Window
     private bool _isRightPanelAnimating;
     private int _expandedWindowWidth;
     private double _expandedHistoryPaneWidth = double.NaN;
+    private int _clipboardListenerPauseDepth;
     private readonly ObservableCollection<SearchBadge> _searchBadges = [];
     private bool _isUpdatingSearchText;
 
@@ -105,7 +106,6 @@ public sealed partial class MainWindow : Window
     {
         await _viewModel.LoadAsync();
         await UpdateRecentSlotHintsAsync();
-        await _clipboardListenerService.CaptureNowAsync();
         RenderTagBadges();
     }
 
@@ -192,6 +192,11 @@ public sealed partial class MainWindow : Window
         }
 
         TryHandleActiveWindowHotKeys(e);
+    }
+
+    private void SearchBox_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+    {
+        PasteClip_Click(this, new RoutedEventArgs());
     }
 
     private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
@@ -298,6 +303,13 @@ public sealed partial class MainWindow : Window
 
     private void Root_KeyDown(object sender, KeyRoutedEventArgs e)
     {
+        if (e.Key == VirtualKey.L && (GetCurrentModifierFlags() & 1) != 0)
+        {
+            FocusSearchBox(clearSearch: false);
+            e.Handled = true;
+            return;
+        }
+
         TryHandleActiveWindowHotKeys(e);
     }
 
@@ -737,12 +749,6 @@ public sealed partial class MainWindow : Window
         });
     }
 
-    private void FocusSearchAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
-    {
-        FocusSearchBox(clearSearch: false);
-        args.Handled = true;
-    }
-
     private async void ShowClipInfo_Click(object sender, RoutedEventArgs e)
     {
         var clip = _viewModel.SelectedClip;
@@ -956,26 +962,46 @@ public sealed partial class MainWindow : Window
 
     private async Task PasteClipToLastFocusAsync(ClipboardClip clip)
     {
-        if (!await PutClipOnClipboardAsync(clip))
+        BeginClipboardListenerPause();
+        try
         {
-            return;
-        }
+            if (!await PutClipOnClipboardAsync(clip))
+            {
+                return;
+            }
 
-        var snapshot = _lastHotkeyFocus.WindowHandle != IntPtr.Zero ? _lastHotkeyFocus : CaptureFocusSnapshot();
-        HideMainWindow();
-        await Task.Delay(90);
-        if (snapshot.WindowHandle != IntPtr.Zero)
-        {
-            RestoreFocusSnapshot(snapshot);
-        }
+            var snapshot = _lastHotkeyFocus.WindowHandle != IntPtr.Zero ? _lastHotkeyFocus : CaptureFocusSnapshot();
+            HideMainWindow();
+            await Task.Delay(90);
+            if (snapshot.WindowHandle != IntPtr.Zero)
+            {
+                RestoreFocusSnapshot(snapshot);
+            }
 
-        await Task.Delay(80);
-        var targetControl = GetTargetControlHandle(snapshot);
-        SendCtrlV();
-        if (targetControl != IntPtr.Zero)
+            await Task.Delay(80);
+            _ = SendCtrlV();
+        }
+        finally
         {
-            await Task.Delay(50);
-            _ = TrySendPasteMessage(targetControl);
+            EndClipboardListenerPause();
+        }
+    }
+
+    private void BeginClipboardListenerPause()
+    {
+        if (Interlocked.Increment(ref _clipboardListenerPauseDepth) == 1)
+        {
+            _clipboardListenerService.Stop();
+        }
+    }
+
+    private void EndClipboardListenerPause()
+    {
+        var depth = Interlocked.Decrement(ref _clipboardListenerPauseDepth);
+        if (depth <= 0)
+        {
+            Interlocked.Exchange(ref _clipboardListenerPauseDepth, 0);
+            _clipboardListenerService.Start();
         }
     }
 

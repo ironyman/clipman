@@ -6,9 +6,6 @@
     xmlns:models="using:Clipman.Models"
     Title="Clipman">
     <Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
-        <Grid.KeyboardAccelerators>
-            <KeyboardAccelerator Key="L" Modifiers="Control" Invoked="FocusSearchAccelerator_Invoked" />
-        </Grid.KeyboardAccelerators>
         <Grid.Resources>
             <converters:ClipKindToIconGlyphConverter x:Key="KindIconConverter" />
             <converters:PinnedGlyphConverter x:Key="PinnedGlyphConverter" />
@@ -98,6 +95,7 @@
                         QueryIcon="Find"
                         PlaceholderText="Search clipboard history"
                         KeyDown="SearchBox_KeyDown"
+                        QuerySubmitted="SearchBox_QuerySubmitted"
                         TextChanged="SearchBox_TextChanged" />
 
                     <Button Grid.Column="1" ToolTipService.ToolTip="Advanced search" Click="AdvancedSearchButton_Click">

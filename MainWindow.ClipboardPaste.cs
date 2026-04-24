@@ -10,11 +10,8 @@ namespace Clipman;
 
 public sealed partial class MainWindow
 {
-    private const uint InputKeyboard = 1;
     private const uint KeyEventfKeyUp = 0x0002;
-    private const uint KeyEventfScanCode = 0x0008;
     private const ushort VkControl = 0x11;
-    private const ushort VkRControl = 0xA3;
     private const ushort VkV = 0x56;
     private const uint MapvkVkToVsc = 0;
     private const uint WmPaste = 0x0302;
@@ -219,6 +216,11 @@ public sealed partial class MainWindow
     private static bool SendCtrlV()
     {
         var foreground = GetForegroundWindow();
+        if (foreground == IntPtr.Zero)
+        {
+            return false;
+        }
+
         var foregroundThreadId = foreground != IntPtr.Zero
             ? GetWindowThreadProcessId(foreground, out _)
             : 0u;
@@ -230,43 +232,24 @@ public sealed partial class MainWindow
             attached = AttachThreadInput(myThreadId, foregroundThreadId, true);
         }
 
-        var controlScan = (ushort)MapVirtualKey(VkRControl, MapvkVkToVsc);
-        var keyScan = (ushort)MapVirtualKey(VkV, MapvkVkToVsc);
-
-        var inputs = new[]
+        try
         {
-            CreateKeyboardInput(VkControl, controlScan, KeyEventfScanCode),
-            CreateKeyboardInput(VkV, keyScan, KeyEventfScanCode),
-            CreateKeyboardInput(VkV, keyScan, KeyEventfKeyUp | KeyEventfScanCode),
-            CreateKeyboardInput(VkControl, controlScan, KeyEventfKeyUp | KeyEventfScanCode)
-        };
-
-        var sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>());
-
-        if (attached)
-        {
-            AttachThreadInput(myThreadId, foregroundThreadId, false);
+            var controlScan = (byte)MapVirtualKey(VkControl, MapvkVkToVsc);
+            var vScan = (byte)MapVirtualKey(VkV, MapvkVkToVsc);
+            keybd_event((byte)VkControl, controlScan, 0, UIntPtr.Zero);
+            keybd_event((byte)VkV, vScan, 0, UIntPtr.Zero);
+            keybd_event((byte)VkV, vScan, KeyEventfKeyUp, UIntPtr.Zero);
+            keybd_event((byte)VkControl, controlScan, KeyEventfKeyUp, UIntPtr.Zero);
+            return true;
         }
-
-        return sent == inputs.Length;
-    }
-
-    private static Input CreateKeyboardInput(ushort virtualKey, ushort scanCode, uint flags) =>
-        new()
+        finally
         {
-            type = InputKeyboard,
-            U = new InputUnion
+            if (attached)
             {
-                ki = new KeybdInput
-                {
-                    wVk = virtualKey,
-                    wScan = scanCode,
-                    dwFlags = flags,
-                    time = 0,
-                    dwExtraInfo = IntPtr.Zero
-                }
+                AttachThreadInput(myThreadId, foregroundThreadId, false);
             }
-        };
+        }
+    }
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -308,7 +291,7 @@ public sealed partial class MainWindow
     private static extern bool IsWindow(IntPtr hWnd);
 
     [DllImport("user32.dll", SetLastError = true)]
-    private static extern uint SendInput(uint nInputs, Input[] pInputs, int cbSize);
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr SendMessageTimeout(
@@ -332,30 +315,6 @@ public sealed partial class MainWindow
         public IntPtr hwndMoveSize;
         public IntPtr hwndCaret;
         public NativeRect rcCaret;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct Input
-    {
-        public uint type;
-        public InputUnion U;
-    }
-
-    [StructLayout(LayoutKind.Explicit)]
-    private struct InputUnion
-    {
-        [FieldOffset(0)]
-        public KeybdInput ki;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct KeybdInput
-    {
-        public ushort wVk;
-        public ushort wScan;
-        public uint dwFlags;
-        public uint time;
-        public IntPtr dwExtraInfo;
     }
 
     private readonly record struct FocusSnapshot(IntPtr WindowHandle, IntPtr FocusHandle)

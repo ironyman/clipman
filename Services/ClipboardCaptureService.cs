@@ -65,35 +65,47 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
 
         if (view.Contains(StandardDataFormats.Text))
         {
-            var text = await view.GetTextAsync().AsTask(cancellationToken);
-            var kind = DetectTextKind(text);
-            return BuildClip(
-                kind,
-                TitleFromText(text, kind),
-                PreviewText(text),
-                LabelForText(kind, text),
-                text,
-                null,
-                null,
-                formatsJson,
-                copiedAt,
-                sourceContext);
+            var text = await TryGetClipboardTextAsync(view, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                var kind = DetectTextKind(text);
+                return BuildClip(
+                    kind,
+                    TitleFromText(text, kind),
+                    PreviewText(text),
+                    LabelForText(kind, text),
+                    text,
+                    null,
+                    null,
+                    formatsJson,
+                    copiedAt,
+                    sourceContext);
+            }
         }
 
         if (view.Contains(StandardDataFormats.Html))
         {
-            var html = await view.GetHtmlFormatAsync().AsTask(cancellationToken);
-            return BuildClip(
-                ClipKind.Html,
-                "HTML fragment",
-                PreviewText(HtmlFormatHelper.GetStaticFragment(html)),
-                "HTML",
-                html,
-                null,
-                null,
-                formatsJson,
-                copiedAt,
-                sourceContext);
+            try
+            {
+                var html = await view.GetHtmlFormatAsync().AsTask(cancellationToken);
+                return BuildClip(
+                    ClipKind.Html,
+                    "HTML fragment",
+                    PreviewText(HtmlFormatHelper.GetStaticFragment(html)),
+                    "HTML",
+                    html,
+                    null,
+                    null,
+                    formatsJson,
+                    copiedAt,
+                    sourceContext);
+            }
+            catch (COMException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
 
         return BuildClip(
@@ -108,7 +120,7 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
             copiedAt,
             sourceContext);
     }
-
+    
     private static string[] SafeGetAvailableFormats(DataPackageView view)
     {
         try
@@ -168,7 +180,20 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
             return null;
         }
 
-        var items = await view.GetStorageItemsAsync();
+        IReadOnlyList<IStorageItem> items;
+        try
+        {
+            items = await view.GetStorageItemsAsync();
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+
         var paths = items
             .Select(item => item is StorageFile file ? file.Path : item.Path)
             .Where(path => !string.IsNullOrWhiteSpace(path))
@@ -197,11 +222,52 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
 
     private static async Task<byte[]?> ReadBitmapAsync(DataPackageView view)
     {
-        var reference = await view.GetBitmapAsync();
-        await using var stream = (await reference.OpenReadAsync()).AsStreamForRead();
-        using var memory = new MemoryStream();
-        await stream.CopyToAsync(memory);
-        return memory.ToArray();
+        try
+        {
+            var reference = await view.GetBitmapAsync();
+            await using var stream = (await reference.OpenReadAsync()).AsStreamForRead();
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            return memory.ToArray();
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task<string?> TryGetClipboardTextAsync(DataPackageView view, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                return await view.GetTextAsync().AsTask(cancellationToken);
+            }
+            catch (COMException) when (attempt < 2)
+            {
+                await Task.Delay(20, cancellationToken);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 2)
+            {
+                await Task.Delay(20, cancellationToken);
+            }
+            catch (COMException)
+            {
+                return null;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return null;
+            }
+        }
+
+        return null;
     }
 
     private static ClipboardClip BuildClip(
