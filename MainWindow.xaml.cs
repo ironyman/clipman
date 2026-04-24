@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Windows.Graphics;
 using Windows.System;
 using WinRT.Interop;
@@ -19,6 +20,8 @@ public sealed partial class MainWindow : Window
     private const int SwShow = 5;
     private const int SettingsToCaptionButtonsGap = 8;
     private const int RecentHotkeySlotCount = 9;
+    private const double RightPanelSlideOffset = 28;
+    private const int RightPanelAnimationDurationMs = 180;
 
     private readonly AppSettingsService _settingsService = new();
     private readonly EsentClipboardHistoryService _repository = new();
@@ -35,7 +38,10 @@ public sealed partial class MainWindow : Window
     private bool _isRecordingClipboardText;
     private string? _recordingClipId;
     private readonly Dictionary<string, int> _recentSlotByClipId = [];
+    private string? _tagDialogClipId;
     private bool _isWindowClosed;
+    private bool _isRightPanelVisible = true;
+    private bool _isRightPanelAnimating;
 
     public MainWindow()
     {
@@ -66,8 +72,13 @@ public sealed partial class MainWindow : Window
         AppWindow.Changed += AppWindow_Changed;
         DragRegion.SizeChanged += DragRegion_SizeChanged;
         SettingsButton.SizeChanged += SettingsButton_SizeChanged;
+        if (GetRightPanelToggleButton() is FrameworkElement rightPanelToggleButton)
+        {
+            rightPanelToggleButton.SizeChanged += RightPanelToggleButton_SizeChanged;
+        }
         UpdateTitleBarInsets();
         UpdateTitleBarPassthroughRegions();
+        UpdateRightPanelToggleIcon();
 
         _clipboardListenerService.Start();
         Closed += MainWindow_Closed;
@@ -81,6 +92,7 @@ public sealed partial class MainWindow : Window
         await _viewModel.LoadAsync();
         await UpdateRecentSlotHintsAsync();
         await _clipboardListenerService.CaptureNowAsync();
+        RenderTagBadges();
     }
 
     private void FilterButton_Click(object sender, RoutedEventArgs e)
@@ -136,12 +148,12 @@ public sealed partial class MainWindow : Window
 
     private void HistoryListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!_isEditingTextClip)
+        if (_isEditingTextClip)
         {
-            return;
+            ExitEditMode();
         }
 
-        ExitEditMode();
+        RenderTagBadges();
     }
 
     private void SearchBox_KeyDown(object sender, KeyRoutedEventArgs e)
@@ -277,6 +289,9 @@ public sealed partial class MainWindow : Window
             case HotKeyAction.PasteRecent9:
                 _ = PasteRecentSlotAsync((int)action - (int)HotKeyAction.PasteRecent1 + 1);
                 return;
+            case HotKeyAction.ToggleRightPanel:
+                _ = ToggleRightPanelAsync();
+                return;
         }
     }
 
@@ -322,6 +337,16 @@ public sealed partial class MainWindow : Window
         UpdateTitleBarPassthroughRegions();
     }
 
+    private void RightPanelToggleButton_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateTitleBarPassthroughRegions();
+    }
+
+    private void RightPanelToggleButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = ToggleRightPanelAsync();
+    }
+
     private void UpdateTitleBarPassthroughRegions()
     {
         if (_isWindowClosed)
@@ -329,12 +354,11 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (_nonClientPointerSource is null || SettingsButton.XamlRoot is null || SettingsButton.ActualWidth <= 0 || SettingsButton.ActualHeight <= 0)
+        if (_nonClientPointerSource is null)
         {
             return;
         }
 
-        var scale = SettingsButton.XamlRoot.RasterizationScale;
         UIElement? visualRoot;
         try
         {
@@ -350,14 +374,34 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var topLeft = SettingsButton.TransformToVisual(visualRoot).TransformPoint(new Windows.Foundation.Point(0, 0));
-        var rect = new RectInt32(
-            (int)Math.Round(topLeft.X * scale),
-            (int)Math.Round(topLeft.Y * scale),
-            Math.Max(1, (int)Math.Round(SettingsButton.ActualWidth * scale)),
-            Math.Max(1, (int)Math.Round(SettingsButton.ActualHeight * scale)));
+        var rects = new List<RectInt32>();
+        AppendPassthroughRect(SettingsButton);
+        if (GetRightPanelToggleButton() is FrameworkElement rightPanelToggleButton)
+        {
+            AppendPassthroughRect(rightPanelToggleButton);
+        }
+        if (rects.Count == 0)
+        {
+            return;
+        }
 
-        _nonClientPointerSource.SetRegionRects(NonClientRegionKind.Passthrough, [rect]);
+        _nonClientPointerSource.SetRegionRects(NonClientRegionKind.Passthrough, rects.ToArray());
+
+        void AppendPassthroughRect(FrameworkElement element)
+        {
+            if (element.XamlRoot is null || element.ActualWidth <= 0 || element.ActualHeight <= 0)
+            {
+                return;
+            }
+
+            var scale = element.XamlRoot.RasterizationScale;
+            var topLeft = element.TransformToVisual(visualRoot).TransformPoint(new Windows.Foundation.Point(0, 0));
+            rects.Add(new RectInt32(
+                (int)Math.Round(topLeft.X * scale),
+                (int)Math.Round(topLeft.Y * scale),
+                Math.Max(1, (int)Math.Round(element.ActualWidth * scale)),
+                Math.Max(1, (int)Math.Round(element.ActualHeight * scale))));
+        }
     }
 
     private void FocusSearchBox(bool clearSearch)
@@ -402,7 +446,8 @@ public sealed partial class MainWindow : Window
             $"Domain: {clip.SourceDomain}",
             $"Reference: {clip.ReferencePath}",
             $"Format: {clip.FormatLabel}",
-            $"Available Formats: {clip.FormatsJson}"
+            $"Available Formats: {clip.FormatsJson}",
+            $"Tags: {string.Join(", ", ParseTags(clip.Tags))}"
         };
 
         var dialog = new ContentDialog
@@ -423,6 +468,37 @@ public sealed partial class MainWindow : Window
         };
 
         await dialog.ShowAsync();
+    }
+
+    private async void AddTags_Click(object sender, RoutedEventArgs e)
+    {
+        var clip = _viewModel.SelectedClip;
+        if (clip is null)
+        {
+            return;
+        }
+
+        _tagDialogClipId = clip.Id;
+        TagInputTextBox.Text = string.Join(", ", ParseTags(clip.Tags));
+        AddTagsDialog.XamlRoot = Root.XamlRoot;
+        _ = await AddTagsDialog.ShowAsync();
+        _tagDialogClipId = null;
+        TagInputTextBox.Text = string.Empty;
+    }
+
+    private async void AddTagsDialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
+    {
+        if (string.IsNullOrWhiteSpace(_tagDialogClipId))
+        {
+            return;
+        }
+
+        var tags = ParseTags(TagInputTextBox.Text);
+        var tagsValue = tags.Count > 0 ? string.Join(",", tags) : null;
+        await _historyService.UpdateTagsAsync(_tagDialogClipId, tagsValue);
+        await RefreshViewAndRestoreSelectionAsync(_tagDialogClipId);
+        _tagDialogClipId = null;
+        TagInputTextBox.Text = string.Empty;
     }
 
     private void EditClip_Click(object sender, RoutedEventArgs e)
@@ -528,6 +604,7 @@ public sealed partial class MainWindow : Window
         await _historyService.DeleteAsync(clip.Id);
         await _viewModel.LoadAsync();
         await UpdateRecentSlotHintsAsync();
+        RenderTagBadges();
     }
 
     private async void CopyClip_Click(object sender, RoutedEventArgs e)
@@ -617,6 +694,10 @@ public sealed partial class MainWindow : Window
         AppWindow.Changed -= AppWindow_Changed;
         DragRegion.SizeChanged -= DragRegion_SizeChanged;
         SettingsButton.SizeChanged -= SettingsButton_SizeChanged;
+        if (GetRightPanelToggleButton() is FrameworkElement rightPanelToggleButton)
+        {
+            rightPanelToggleButton.SizeChanged -= RightPanelToggleButton_SizeChanged;
+        }
     }
 
     private void TryEnableMica()
@@ -701,11 +782,48 @@ public sealed partial class MainWindow : Window
         await UpdateRecentSlotHintsAsync();
         if (preferredId is null)
         {
+            RenderTagBadges();
             return;
         }
 
         _viewModel.SelectedClip = _viewModel.VisibleClips.FirstOrDefault(clip => clip.Id == preferredId)
             ?? _viewModel.VisibleClips.FirstOrDefault();
+        RenderTagBadges();
+    }
+
+    private IReadOnlyList<string> GetTagsForClip() =>
+        ParseTags(_viewModel.SelectedClip?.Tags);
+
+    private void RenderTagBadges()
+    {
+        if (_viewModel.SelectedClip is null)
+        {
+            TagBadgesItemsControl.ItemsSource = null;
+            TagBadgesSection.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var tags = GetTagsForClip();
+        TagBadgesItemsControl.ItemsSource = tags;
+        TagBadgesSection.Visibility = tags.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private static List<string> ParseTags(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return [];
+        }
+
+        var tags = input
+            .Split([',', ';', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(tag => tag.Trim().TrimStart('#'))
+            .Where(tag => !string.IsNullOrWhiteSpace(tag))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(20)
+            .ToList();
+
+        return tags;
     }
 
     private Task UpdateRecentSlotHintsAsync()
@@ -821,4 +939,90 @@ public sealed partial class MainWindow : Window
     private static bool IsRecordableTextClip(ClipboardClip clip) =>
         (clip.Kind == ClipKind.Text || clip.Kind == ClipKind.Code || clip.Kind == ClipKind.Url) &&
         !string.IsNullOrWhiteSpace(clip.ContentText);
+
+    private async Task ToggleRightPanelAsync()
+    {
+        if (_isRightPanelAnimating)
+        {
+            return;
+        }
+
+        _isRightPanelAnimating = true;
+        try
+        {
+            if (_isRightPanelVisible)
+            {
+                await AnimateRightPanelAsync(show: false);
+                RightPanelHost.Visibility = Visibility.Collapsed;
+                DetailsColumn.Width = new GridLength(0);
+                HistoryColumn.Width = new GridLength(1, GridUnitType.Star);
+                _isRightPanelVisible = false;
+                UpdateRightPanelToggleIcon();
+                return;
+            }
+
+            HistoryColumn.Width = new GridLength(420);
+            DetailsColumn.Width = new GridLength(1, GridUnitType.Star);
+            RightPanelHost.Visibility = Visibility.Visible;
+            Root.UpdateLayout();
+            await AnimateRightPanelAsync(show: true);
+            _isRightPanelVisible = true;
+            UpdateRightPanelToggleIcon();
+        }
+        finally
+        {
+            _isRightPanelAnimating = false;
+        }
+    }
+
+    private Task AnimateRightPanelAsync(bool show)
+    {
+        var completion = new TaskCompletionSource<object?>();
+        var storyboard = new Storyboard();
+
+        var opacityAnimation = new DoubleAnimation
+        {
+            Duration = TimeSpan.FromMilliseconds(RightPanelAnimationDurationMs),
+            To = show ? 1 : 0
+        };
+        Storyboard.SetTarget(opacityAnimation, RightPanelHost);
+        Storyboard.SetTargetProperty(opacityAnimation, nameof(UIElement.Opacity));
+
+        var slideAnimation = new DoubleAnimation
+        {
+            Duration = TimeSpan.FromMilliseconds(RightPanelAnimationDurationMs),
+            To = show ? 0 : RightPanelSlideOffset
+        };
+        Storyboard.SetTarget(slideAnimation, RightPanelTranslateTransform);
+        Storyboard.SetTargetProperty(slideAnimation, nameof(TranslateTransform.X));
+
+        storyboard.Children.Add(opacityAnimation);
+        storyboard.Children.Add(slideAnimation);
+
+        if (show)
+        {
+            RightPanelHost.Opacity = 0;
+            RightPanelTranslateTransform.X = RightPanelSlideOffset;
+        }
+
+        storyboard.Completed += (_, _) => completion.TrySetResult(null);
+        storyboard.Begin();
+        return completion.Task;
+    }
+
+    private void UpdateRightPanelToggleIcon()
+    {
+        if (GetRightPanelToggleIcon() is not FontIcon rightPanelToggleIcon ||
+            GetRightPanelToggleButton() is not FrameworkElement rightPanelToggleButton)
+        {
+            return;
+        }
+
+        rightPanelToggleIcon.Glyph = _isRightPanelVisible ? "\uE8A1" : "\uE8A0";
+        ToolTipService.SetToolTip(rightPanelToggleButton, _isRightPanelVisible ? "Hide details panel" : "Show details panel");
+    }
+
+    private FrameworkElement? GetRightPanelToggleButton() => Root.FindName("RightPanelToggleButton") as FrameworkElement;
+
+    private FontIcon? GetRightPanelToggleIcon() => Root.FindName("RightPanelToggleIcon") as FontIcon;
 }

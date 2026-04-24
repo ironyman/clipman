@@ -23,4 +23,6 @@ public interface IClipboardClipRepository
     Task DeleteAsync(string id, CancellationToken cancellationToken = default);
 
     Task UpdateTextAsync(string id, string title, string preview, string contentText, CancellationToken cancellationToken = default);
+
+    Task UpdateTagsAsync(string id, string? tags, CancellationToken cancellationToken = default);
 }

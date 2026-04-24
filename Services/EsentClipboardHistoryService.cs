@@ -121,6 +121,7 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
                 AddColumn(session, table, "BrowserTabTitle", JET_coltyp.LongText);
                 AddColumn(session, table, "SourceUrl", JET_coltyp.LongText);
                 AddColumn(session, table, "SourceDomain", JET_coltyp.LongText);
+                AddColumn(session, table, "Tags", JET_coltyp.LongText);
                 AddColumn(session, table, "FormatLabel", JET_coltyp.LongText);
                 AddColumn(session, table, "CopiedAt", JET_coltyp.Currency);
                 AddColumn(session, table, "IsPinned", JET_coltyp.Bit);
@@ -147,6 +148,7 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
         AddColumnIfMissing(session, table, "BrowserTabTitle", JET_coltyp.LongText);
         AddColumnIfMissing(session, table, "SourceUrl", JET_coltyp.LongText);
         AddColumnIfMissing(session, table, "SourceDomain", JET_coltyp.LongText);
+        AddColumnIfMissing(session, table, "Tags", JET_coltyp.LongText);
     }
 
     private static void AddColumn(Session session, JET_TABLEID table, string name, JET_coltyp type)
@@ -184,7 +186,7 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
         var columns = Columns(session, table);
         var clips = new List<ClipboardClip>(take);
         var skipped = 0;
-        var normalizedQuery = query?.Trim();
+        var normalizedQuery = NormalizeSearchQuery(query);
 
         Api.JetSetCurrentIndex(session, table, "copiedAt");
         if (!Api.TryMoveFirst(session, table))
@@ -225,7 +227,24 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
                 (clip.SourceWindowTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
                 (clip.BrowserTabTitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
                 (clip.SourceUrl?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (clip.SourceDomain?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
+                (clip.SourceDomain?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (clip.Tags?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
+    }
+
+    private static string? NormalizeSearchQuery(string? query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return null;
+        }
+
+        var normalized = query.Trim();
+        if (normalized.StartsWith('#'))
+        {
+            normalized = normalized.TrimStart('#').Trim();
+        }
+
+        return normalized;
     }
 
     public async Task<bool> ExistsAsync(string id, CancellationToken cancellationToken = default)
@@ -272,6 +291,7 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
             SetText(session, table, columns["BrowserTabTitle"], clip.BrowserTabTitle);
             SetText(session, table, columns["SourceUrl"], clip.SourceUrl);
             SetText(session, table, columns["SourceDomain"], clip.SourceDomain);
+            SetText(session, table, columns["Tags"], clip.Tags);
             SetText(session, table, columns["FormatLabel"], clip.FormatLabel);
             Api.SetColumn(session, table, columns["CopiedAt"], clip.CopiedAt.UtcTicks);
             Api.SetColumn(session, table, columns["IsPinned"], clip.IsPinned);
@@ -371,6 +391,35 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
         }
     }
 
+    public async Task UpdateTagsAsync(string id, string? tags, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            using var session = new Session(_instance);
+            var dbid = OpenDatabase(session);
+            using var table = new Table(session, dbid, TableName, OpenTableGrbit.None);
+            var columns = Columns(session, table);
+
+            Api.JetSetCurrentIndex(session, table, "primary");
+            Api.MakeKey(session, table, id, Encoding.Unicode, MakeKeyGrbit.NewKey);
+            if (!Api.TrySeek(session, table, SeekGrbit.SeekEQ))
+            {
+                return;
+            }
+
+            using var transaction = new Transaction(session);
+            using var update = new Update(session, table, JET_prep.Replace);
+            SetText(session, table, columns["Tags"], tags ?? string.Empty);
+            update.Save();
+            transaction.Commit(CommitTransactionGrbit.None);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private static IDictionary<string, JET_COLUMNID> Columns(Session session, JET_TABLEID table) =>
         Api.GetColumnDictionary(session, table);
 
@@ -394,6 +443,7 @@ public sealed class EsentClipboardHistoryService : IClipboardClipRepository, IDi
             BrowserTabTitle = GetOptionalText(session, table, columns, "BrowserTabTitle"),
             SourceUrl = GetOptionalText(session, table, columns, "SourceUrl"),
             SourceDomain = GetOptionalText(session, table, columns, "SourceDomain"),
+            Tags = GetOptionalText(session, table, columns, "Tags"),
             FormatLabel = GetText(session, table, columns["FormatLabel"]),
             CopiedAt = new DateTimeOffset(copiedAtTicks, TimeSpan.Zero).ToLocalTime(),
             IsPinned = Api.RetrieveColumnAsBoolean(session, table, columns["IsPinned"]) ?? false,

@@ -52,4 +52,7 @@ public sealed class ClipboardHistoryService : IClipboardHistoryService
 
     public Task UpdateTextAsync(string id, string title, string preview, string contentText, CancellationToken cancellationToken = default) =>
         _repository.UpdateTextAsync(id, title, preview, contentText, cancellationToken);
+
+    public Task UpdateTagsAsync(string id, string? tags, CancellationToken cancellationToken = default) =>
+        _repository.UpdateTagsAsync(id, tags, cancellationToken);
 }

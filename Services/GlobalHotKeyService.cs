@@ -30,6 +30,7 @@ public sealed class GlobalHotKeyService : IDisposable
 
         var succeeded = true;
         succeeded &= TryRegisterBinding(HotKeyAction.ToggleWindow, settings.ToggleWindow);
+        succeeded &= TryRegisterBinding(HotKeyAction.ToggleRightPanel, settings.ToggleRightPanel);
 
         for (var i = 0; i < 9; i++)
         {

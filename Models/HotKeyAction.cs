@@ -11,5 +11,6 @@ public enum HotKeyAction
     PasteRecent6 = 7,
     PasteRecent7 = 8,
     PasteRecent8 = 9,
-    PasteRecent9 = 10
+    PasteRecent9 = 10,
+    ToggleRightPanel = 11
 }

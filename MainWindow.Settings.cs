@@ -16,6 +16,7 @@ public sealed partial class MainWindow
         var working = new HotKeySettings
         {
             ToggleWindow = CloneBinding(_hotKeySettings.ToggleWindow),
+            ToggleRightPanel = CloneBinding(_hotKeySettings.ToggleRightPanel),
             PasteSelected = CloneBinding(_hotKeySettings.PasteSelected),
             TogglePin = CloneBinding(_hotKeySettings.TogglePin),
             PasteRecent = _hotKeySettings.PasteRecent.Select(CloneBinding).ToList(),
@@ -31,6 +32,7 @@ public sealed partial class MainWindow
         var bindings = new Dictionary<string, HotKeyBinding>(StringComparer.Ordinal)
         {
             ["toggle_window"] = working.ToggleWindow,
+            ["toggle_right_panel"] = working.ToggleRightPanel,
             ["paste_selected"] = working.PasteSelected,
             ["toggle_pin"] = working.TogglePin
         };
@@ -114,6 +116,7 @@ public sealed partial class MainWindow
         };
 
         AddHotKeyRow(rowsPanel, "Open/Toggle Window", "toggle_window");
+        AddHotKeyRow(rowsPanel, "Show/Hide Details Panel", "toggle_right_panel");
         AddHotKeyRow(rowsPanel, "Paste Selected Clip", "paste_selected");
         AddHotKeyRow(rowsPanel, "Toggle Pin", "toggle_pin");
         for (var i = 0; i < RecentHotkeySlotCount; i++)
@@ -144,6 +147,7 @@ public sealed partial class MainWindow
         _hotKeySettings = new HotKeySettings
         {
             ToggleWindow = bindings["toggle_window"],
+            ToggleRightPanel = bindings["toggle_right_panel"],
             PasteSelected = bindings["paste_selected"],
             TogglePin = bindings["toggle_pin"],
             PasteRecent = Enumerable.Range(1, RecentHotkeySlotCount)

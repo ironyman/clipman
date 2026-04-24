@@ -42,6 +42,12 @@ public sealed class HotKeySettings
         Key = "P"
     };
 
+    public HotKeyBinding ToggleRightPanel { get; set; } = new()
+    {
+        Modifier = "Control",
+        Key = "E"
+    };
+
     public List<HotKeyBinding> PasteRecent { get; set; } =
     [
         new() { Modifier = "Alt", Key = "1" },

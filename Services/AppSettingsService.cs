@@ -59,6 +59,7 @@ public sealed class AppSettingsService
         settings.ToggleWindow = NormalizeBinding(settings.ToggleWindow, "Control+Shift", "V");
         settings.PasteSelected = NormalizeBinding(settings.PasteSelected, string.Empty, "Enter");
         settings.TogglePin = NormalizeBinding(settings.TogglePin, "Control", "P");
+        settings.ToggleRightPanel = NormalizeBinding(settings.ToggleRightPanel, "Control", "E");
 
         if (settings.PasteRecent is null || settings.PasteRecent.Count != 9)
         {

@@ -14,6 +14,7 @@ public sealed class DesignClipboardHistoryService : IClipboardHistoryService
         bool pinnedOnly = false,
         CancellationToken cancellationToken = default)
     {
+        var normalizedQuery = NormalizeSearchQuery(query);
         IReadOnlyList<ClipboardClip> clips =
         [
             new()
@@ -23,6 +24,7 @@ public sealed class DesignClipboardHistoryService : IClipboardHistoryService
                 Title = "Meeting notes - Q4 planning",
                 Preview = "Action items: finalize budget, review launch metrics, and send the revised timeline to design.",
                 SourceApp = "Teams",
+                Tags = "work,planning,meeting",
                 FormatLabel = "Plain text",
                 CopiedAt = DateTimeOffset.Now.AddSeconds(-20),
                 IsPinned = true,
@@ -36,6 +38,7 @@ public sealed class DesignClipboardHistoryService : IClipboardHistoryService
                 Title = "Submit handler",
                 Preview = "const handleSubmit = async (data) => {\n  await saveClipboardRule(data);\n};",
                 SourceApp = "Visual Studio Code",
+                Tags = "code,frontend,todo",
                 FormatLabel = "JavaScript - 3 lines",
                 CopiedAt = DateTimeOffset.Now.AddMinutes(-3),
                 UseCount = 7,
@@ -48,6 +51,7 @@ public sealed class DesignClipboardHistoryService : IClipboardHistoryService
                 Title = "API documentation",
                 Preview = "https://docs.example.com/api/v2/clipboard/history",
                 SourceApp = "Edge",
+                Tags = "docs,api",
                 FormatLabel = "URL",
                 CopiedAt = DateTimeOffset.Now.AddMinutes(-8),
                 UseCount = 3,
@@ -60,6 +64,7 @@ public sealed class DesignClipboardHistoryService : IClipboardHistoryService
                 Title = "Screenshot - dashboard.png",
                 Preview = "Image thumbnail preview - 1920 x 1080",
                 SourceApp = "Snipping Tool",
+                Tags = "design,reporting",
                 FormatLabel = "PNG image",
                 CopiedAt = DateTimeOffset.Now.AddMinutes(-18),
                 IsPinned = true,
@@ -73,6 +78,7 @@ public sealed class DesignClipboardHistoryService : IClipboardHistoryService
                 Title = "Revenue table",
                 Preview = "HTML table with 24 rows and formatting retained for rich paste targets.",
                 SourceApp = "Excel",
+                Tags = "finance,table",
                 FormatLabel = "HTML",
                 CopiedAt = DateTimeOffset.Now.AddHours(-1),
                 UseCount = 5,
@@ -85,6 +91,7 @@ public sealed class DesignClipboardHistoryService : IClipboardHistoryService
                 Title = "Project brief.pdf",
                 Preview = "C:\\Users\\admin\\Documents\\Project brief.pdf",
                 SourceApp = "File Explorer",
+                Tags = "file,brief",
                 FormatLabel = "File path",
                 CopiedAt = DateTimeOffset.Now.AddHours(-4),
                 UseCount = 2,
@@ -95,9 +102,10 @@ public sealed class DesignClipboardHistoryService : IClipboardHistoryService
         var filtered = clips.Where(clip =>
             (!pinnedOnly || clip.IsPinned) &&
             (kind is null || clip.Kind == kind) &&
-            (string.IsNullOrWhiteSpace(query) ||
-             clip.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-             clip.Preview.Contains(query, StringComparison.OrdinalIgnoreCase)));
+            (string.IsNullOrWhiteSpace(normalizedQuery) ||
+             clip.Title.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase) ||
+             clip.Preview.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase) ||
+             (clip.Tags?.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase) ?? false)));
 
         return Task.FromResult<IReadOnlyList<ClipboardClip>>(filtered.Skip(skip).Take(take).ToList());
     }
@@ -127,4 +135,23 @@ public sealed class DesignClipboardHistoryService : IClipboardHistoryService
 
     public Task UpdateTextAsync(string id, string title, string preview, string contentText, CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
+
+    public Task UpdateTagsAsync(string id, string? tags, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    private static string? NormalizeSearchQuery(string? query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return null;
+        }
+
+        var normalized = query.Trim();
+        if (normalized.StartsWith('#'))
+        {
+            normalized = normalized.TrimStart('#').Trim();
+        }
+
+        return normalized;
+    }
 }

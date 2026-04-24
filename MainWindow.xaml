@@ -57,6 +57,13 @@
 
             <StackPanel x:Name="TitleActionsPanel" Grid.Column="2" Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
                 <Button
+                    x:Name="RightPanelToggleButton"
+                    Style="{StaticResource TitleBarIconButtonStyle}"
+                    ToolTipService.ToolTip="Toggle details panel"
+                    Click="RightPanelToggleButton_Click">
+                    <FontIcon x:Name="RightPanelToggleIcon" Glyph="&#xE8A1;" />
+                </Button>
+                <Button
                     x:Name="SettingsButton"
                     Style="{StaticResource TitleBarIconButtonStyle}"
                     ToolTipService.ToolTip="Settings"
@@ -68,8 +75,8 @@
 
         <Grid Grid.Row="1" Padding="16,8,16,16" ColumnSpacing="12">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="420" MinWidth="320" />
-                <ColumnDefinition Width="*" MinWidth="340" />
+                <ColumnDefinition x:Name="HistoryColumn" Width="420" MinWidth="320" />
+                <ColumnDefinition x:Name="DetailsColumn" Width="*" MinWidth="340" />
             </Grid.ColumnDefinitions>
 
             <Grid Grid.Column="0" RowSpacing="12">
@@ -175,7 +182,10 @@
 
             </Grid>
 
-            <Grid Grid.Column="1" RowSpacing="12">
+            <Grid Grid.Column="1" x:Name="RightPanelHost" RowSpacing="12" Opacity="1">
+                <Grid.RenderTransform>
+                    <TranslateTransform x:Name="RightPanelTranslateTransform" X="0" />
+                </Grid.RenderTransform>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -222,6 +232,27 @@
                                     Text="{Binding SelectedClip.SourceUrl}"
                                     TextWrapping="Wrap"
                                     Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                            </StackPanel>
+                            <StackPanel x:Name="TagBadgesSection" Spacing="4" Visibility="Collapsed">
+                                <TextBlock Text="Tags" Style="{StaticResource MetricTextStyle}" />
+                                <ItemsControl x:Name="TagBadgesItemsControl">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <ItemsWrapGrid Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border
+                                                Margin="0,0,6,6"
+                                                Padding="10,4"
+                                                CornerRadius="12"
+                                                Background="{ThemeResource AccentFillColorSecondaryBrush}">
+                                                <TextBlock Text="{Binding}" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </StackPanel>
                         </StackPanel>
 
@@ -281,6 +312,7 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <Button HorizontalAlignment="Stretch" Click="CopyClip_Click">
                         <StackPanel Orientation="Horizontal" Spacing="8">
@@ -318,9 +350,34 @@
                             <TextBlock Text="Delete" />
                         </StackPanel>
                     </Button>
+                    <Button Grid.Column="6" HorizontalAlignment="Stretch" Click="AddTags_Click">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE8EC;" />
+                            <TextBlock Text="Add Tags" />
+                        </StackPanel>
+                    </Button>
                 </Grid>
 
             </Grid>
         </Grid>
+
+        <ContentDialog
+            x:Name="AddTagsDialog"
+            Title="Add tags"
+            PrimaryButtonText="Save"
+            CloseButtonText="Cancel"
+            DefaultButton="Primary"
+            PrimaryButtonClick="AddTagsDialog_PrimaryButtonClick">
+            <StackPanel Spacing="8">
+                <TextBlock Text="Add tags separated by commas or new lines." TextWrapping="Wrap" />
+                <TextBox
+                    x:Name="TagInputTextBox"
+                    PlaceholderText="work, docs, urgent"
+                    AcceptsReturn="True"
+                    MinWidth="320"
+                    MinHeight="120"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+        </ContentDialog>
     </Grid>
 </Window>

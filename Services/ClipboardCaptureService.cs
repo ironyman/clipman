@@ -14,6 +14,9 @@ namespace Clipman.Services;
 
 public sealed class ClipboardCaptureService : IClipboardCaptureService
 {
+    private const int MaxFormatCount = 128;
+    private const int MaxFormatNameLength = 96;
+
     public async Task<ClipboardClip?> CaptureAsync(CancellationToken cancellationToken = default)
     {
         DataPackageView view;
@@ -26,7 +29,7 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
             return null;
         }
 
-        var formats = view.AvailableFormats.ToArray();
+        var formats = SafeGetAvailableFormats(view);
         if (formats.Length == 0)
         {
             return null;
@@ -34,7 +37,7 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
 
         var copiedAt = DateTimeOffset.Now;
         var sourceContext = TryGetSourceContext();
-        var formatsJson = JsonSerializer.Serialize(formats);
+        var formatsJson = SafeSerializeFormats(formats);
         var fileClip = await TryCreateStorageItemClipAsync(view, formatsJson, copiedAt, sourceContext);
         if (fileClip is not null)
         {
@@ -104,6 +107,54 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
             formatsJson,
             copiedAt,
             sourceContext);
+    }
+
+    private static string[] SafeGetAvailableFormats(DataPackageView view)
+    {
+        try
+        {
+            var results = new List<string>(16);
+            foreach (var rawFormat in view.AvailableFormats)
+            {
+                if (results.Count >= MaxFormatCount)
+                {
+                    results.Add("...truncated");
+                    break;
+                }
+
+                if (string.IsNullOrWhiteSpace(rawFormat))
+                {
+                    continue;
+                }
+
+                var format = rawFormat.Length <= MaxFormatNameLength
+                    ? rawFormat
+                    : $"{rawFormat[..MaxFormatNameLength]}...";
+                results.Add(format);
+            }
+
+            return results.ToArray();
+        }
+        catch (OutOfMemoryException)
+        {
+            return [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static string SafeSerializeFormats(string[] formats)
+    {
+        try
+        {
+            return JsonSerializer.Serialize(formats);
+        }
+        catch
+        {
+            return "[]";
+        }
     }
 
     private static async Task<ClipboardClip?> TryCreateStorageItemClipAsync(
@@ -220,6 +271,7 @@ public sealed class ClipboardCaptureService : IClipboardCaptureService
             BrowserTabTitle = sourceContext.TabTitle ?? clip.BrowserTabTitle,
             SourceUrl = pageUrl,
             SourceDomain = domain ?? clip.SourceDomain,
+            Tags = clip.Tags,
             FormatLabel = clip.FormatLabel,
             CopiedAt = clip.CopiedAt,
             IsPinned = clip.IsPinned,

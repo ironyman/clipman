@@ -3,6 +3,8 @@
 #include <oleauto.h>
 #include <uiautomation.h>
 
+#include "clipman_uia_bridge_exports.h"
+
 #include <string>
 #include <vector>
 

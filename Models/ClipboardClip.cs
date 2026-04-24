@@ -15,6 +15,7 @@ public sealed class ClipboardClip
     public string? BrowserTabTitle { get; init; }
     public string? SourceUrl { get; init; }
     public string? SourceDomain { get; init; }
+    public string? Tags { get; init; }
     public string? FormatLabel { get; init; }
     public DateTimeOffset CopiedAt { get; init; }
     public bool IsPinned { get; init; }
