@@ -12,6 +12,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <WindowsPackageType>None</WindowsPackageType>
+    <EnableMsixTooling>true</EnableMsixTooling>
     <ApplicationIcon>Assets\clipman.ico</ApplicationIcon>
   </PropertyGroup>
 
@@ -31,4 +32,11 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+
+  <Target Name="BuildNativeUiaBridge" BeforeTargets="Build">
+    <Message Importance="High" Text="Building native UIA bridge..." />
+    <Exec
+      Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\native\build-uia-bridge.ps1&quot;"
+      WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
 </Project>
