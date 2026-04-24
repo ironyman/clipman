@@ -45,4 +45,10 @@ if (-not $Quiet.IsPresent) {
     if ($wixExe) {
         Write-Host "wix         = $wixExe"
     }
+    Write-Host ""
+    Write-Host "Common commands:"
+    Write-Host "  Full build:          dotnet build .\Clipman.csproj -c Debug -r win-x64"
+    Write-Host "  Native bridge only:  .\native\build-uia-bridge.ps1"
+    Write-Host "  Publish ZIP:         .\scripts\publish-zip.ps1"
+    Write-Host "  Build installer:     .\scripts\build-wix-installer.ps1"
 }

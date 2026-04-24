@@ -33,10 +33,21 @@
     </None>
   </ItemGroup>
 
-  <Target Name="BuildNativeUiaBridge" BeforeTargets="Build">
-    <Message Importance="High" Text="Building native UIA bridge..." />
+  <Target Name="BuildNativeUiaBridge" BeforeTargets="PrepareForBuild">
+    <Message
+      Importance="High"
+      Condition="Exists('$(MSBuildProjectDirectory)\native\bin\clipman_uia_bridge.dll')"
+      Text="Skipping native UIA bridge build (native\bin\clipman_uia_bridge.dll already exists)." />
+    <Message
+      Importance="High"
+      Condition="!Exists('$(MSBuildProjectDirectory)\native\bin\clipman_uia_bridge.dll')"
+      Text="Building native UIA bridge..." />
     <Exec
+      Condition="!Exists('$(MSBuildProjectDirectory)\native\bin\clipman_uia_bridge.dll')"
       Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\native\build-uia-bridge.ps1&quot;"
       WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <Error
+      Condition="!Exists('$(MSBuildProjectDirectory)\native\bin\clipman_uia_bridge.dll')"
+      Text="Native bridge build did not produce native\bin\clipman_uia_bridge.dll." />
   </Target>
 </Project>

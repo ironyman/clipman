@@ -85,6 +85,62 @@ function Get-WixPath {
     return Resolve-ToolPath -ToolName "WiX CLI (wix)" -CommandName "wix" -CandidatePaths $candidates
 }
 
+function Get-WixVersion {
+    param([Parameter(Mandatory = $true)][string]$WixExePath)
+
+    $versionOutput = & $WixExePath --version 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($versionOutput)) {
+        return $null
+    }
+
+    $line = ($versionOutput | Select-Object -First 1).Trim()
+    $firstToken = ($line -split '\s+')[0]
+    $semverText = ($firstToken -split '\+')[0]
+
+    try {
+        return [Version]$semverText
+    }
+    catch {
+        return $null
+    }
+}
+
+function Ensure-WixInstalled {
+    $dotnetExe = Get-DotnetPath
+
+    $wixPath = $null
+    try {
+        $wixPath = Get-WixPath
+    }
+    catch {
+        Write-Host "WiX CLI not found. Installing global dotnet tool 'wix'..."
+        & $dotnetExe tool install --global wix --version 4.* *> $null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to install WiX CLI with 'dotnet tool install --global wix'."
+        }
+
+        $wixPath = Get-WixPath
+    }
+
+    $version = Get-WixVersion -WixExePath $wixPath
+    if (-not $version -or $version.Major -ne 4) {
+        Write-Host "Detected WiX version '$version'. Updating to WiX v4 for compatibility..."
+        & $dotnetExe tool uninstall --global wix *> $null
+        & $dotnetExe tool install --global wix --version 4.* *> $null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to install WiX CLI v4 ('dotnet tool install --global wix --version 4.*')."
+        }
+
+        $wixPath = Get-WixPath
+        $version = Get-WixVersion -WixExePath $wixPath
+        if (-not $version -or $version.Major -ne 4) {
+            throw "WiX v4 is required, but detected version '$version'."
+        }
+    }
+
+    return $wixPath
+}
+
 function Get-VsWherePath {
     $candidates = @(
         "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
