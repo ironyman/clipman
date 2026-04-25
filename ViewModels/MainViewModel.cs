@@ -186,12 +186,11 @@ public sealed class MainViewModel : ObservableObject
 
         foreach (var clip in page)
         {
-            VisibleClips.Add(clip);
+            InsertClipInOrder(clip);
         }
 
         _loadedCount += sourcePage.Count;
         HasMore = sourcePage.Count >= PageSize;
-        ReorderVisibleClips();
         if (_loadedCount <= sourcePage.Count || isSearching)
         {
             SelectedClip = VisibleClips.FirstOrDefault();
@@ -234,31 +233,39 @@ public sealed class MainViewModel : ObservableObject
 
         if ((!ShowPinnedOnly || clip.IsPinned) && (SelectedKind is null || clip.Kind == SelectedKind))
         {
-            VisibleClips.Insert(0, clip);
+            InsertClipInOrder(clip);
             _loadedCount++;
-            ReorderVisibleClips();
             SelectedClip = VisibleClips.FirstOrDefault(item => item.Id == clip.Id) ?? clip;
             PinnedCount = VisibleClips.Count(item => item.IsPinned);
         }
     }
 
-    private void ReorderVisibleClips()
+    private void InsertClipInOrder(ClipboardClip clip)
     {
-        var selectedId = SelectedClip?.Id;
-        var ordered = VisibleClips
-            .OrderByDescending(clip => clip.IsPinned)
-            .ThenByDescending(clip => clip.CopiedAt)
-            .ToList();
-
-        VisibleClips.Clear();
-        foreach (var clip in ordered)
+        if (VisibleClips.Any(existing => existing.Id.Equals(clip.Id, StringComparison.Ordinal)))
         {
-            VisibleClips.Add(clip);
+            return;
         }
 
-        if (selectedId is not null)
+        for (var i = 0; i < VisibleClips.Count; i++)
         {
-            SelectedClip = VisibleClips.FirstOrDefault(clip => clip.Id == selectedId) ?? VisibleClips.FirstOrDefault();
+            if (ShouldInsertBefore(clip, VisibleClips[i]))
+            {
+                VisibleClips.Insert(i, clip);
+                return;
+            }
         }
+
+        VisibleClips.Add(clip);
+    }
+
+    private static bool ShouldInsertBefore(ClipboardClip candidate, ClipboardClip existing)
+    {
+        if (candidate.IsPinned != existing.IsPinned)
+        {
+            return candidate.IsPinned;
+        }
+
+        return candidate.CopiedAt > existing.CopiedAt;
     }
 }
