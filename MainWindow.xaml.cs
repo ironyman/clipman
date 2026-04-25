@@ -16,6 +16,7 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Graphics;
 using Windows.System;
 using Windows.Storage.Streams;
+using Windows.UI.ViewManagement;
 using WinRT.Interop;
 
 namespace Clipman;
@@ -59,6 +60,7 @@ public sealed partial class MainWindow : Window
     private readonly ObservableCollection<SearchBadge> _searchBadges = [];
     private readonly Dictionary<string, BitmapImage?> _imagePreviewCache = [];
     private readonly Dictionary<string, BitmapImage?> _appIconPreviewCache = [];
+    private readonly UISettings _uiSettings = new();
     private bool _isUpdatingSearchText;
     private bool _isFileSearchMode;
     private int _fileSearchRequestVersion;
@@ -83,7 +85,7 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(DragRegion);
         TryEnableMica();
-        Root.ActualThemeChanged += Root_ActualThemeChanged;
+        _uiSettings.ColorValuesChanged += UiSettings_ColorValuesChanged;
         ApplyThemeIcons();
         _nonClientPointerSource = InputNonClientPointerSource.GetForWindowId(AppWindow.Id);
 
@@ -1223,7 +1225,7 @@ public sealed partial class MainWindow : Window
     {
         _isWindowClosed = true;
         _viewModel.VisibleClips.CollectionChanged -= VisibleClips_CollectionChanged;
-        Root.ActualThemeChanged -= Root_ActualThemeChanged;
+        _uiSettings.ColorValuesChanged -= UiSettings_ColorValuesChanged;
         _clipboardListenerService.Dispose();
         _fileSearchService.Dispose();
         RemoveTrayIcon();
@@ -1246,9 +1248,9 @@ public sealed partial class MainWindow : Window
         SystemBackdrop = new MicaBackdrop();
     }
 
-    private void Root_ActualThemeChanged(FrameworkElement sender, object args)
+    private void UiSettings_ColorValuesChanged(UISettings sender, object args)
     {
-        ApplyThemeIcons();
+        _ = DispatcherQueue.TryEnqueue(ApplyThemeIcons);
     }
 
     private void ApplyThemeIcons()
@@ -1269,7 +1271,7 @@ public sealed partial class MainWindow : Window
 
     private string GetThemeIconPath()
     {
-        var fileName = Root.ActualTheme == ElementTheme.Dark ? "clipman-light.ico" : "clipman-dark.ico";
+        var fileName = IsOsDarkMode() ? "clipman-light.ico" : "clipman-dark.ico";
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", fileName);
         if (!File.Exists(iconPath))
         {
@@ -1277,6 +1279,13 @@ public sealed partial class MainWindow : Window
         }
 
         return iconPath;
+    }
+
+    private bool IsOsDarkMode()
+    {
+        var background = _uiSettings.GetColorValue(UIColorType.Background);
+        var relativeLuminance = (0.2126 * background.R) + (0.7152 * background.G) + (0.0722 * background.B);
+        return relativeLuminance < 128;
     }
 
     private static ScrollViewer? FindScrollViewer(DependencyObject root)
