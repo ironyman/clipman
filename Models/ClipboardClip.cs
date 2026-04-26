@@ -2,6 +2,13 @@ namespace Clipman.Models;
 
 public sealed class ClipboardClip
 {
+    private const int MaxListTitleChars = 180;
+    private const int MaxListPreviewChars = 1200;
+    private const int MaxSelectedPreviewChars = 12000;
+    private string? _displayTitle;
+    private string? _displayPreview;
+    private string? _displayContent;
+
     public required string Id { get; init; }
     public required ClipKind Kind { get; init; }
     public required string Title { get; init; }
@@ -35,7 +42,14 @@ public sealed class ClipboardClip
         }
     }
 
-    public string DisplayContent => SanitizeForDisplay(!string.IsNullOrWhiteSpace(ContentText) ? ContentText : Preview);
+    public string DisplayTitle => _displayTitle ??= SanitizeAndClampForDisplay(Title, MaxListTitleChars, collapseLines: true);
+
+    public string DisplayPreview => _displayPreview ??= SanitizeAndClampForDisplay(Preview, MaxListPreviewChars, collapseLines: true);
+
+    public string DisplayContent => _displayContent ??= SanitizeAndClampForDisplay(
+        !string.IsNullOrWhiteSpace(ContentText) ? ContentText : Preview,
+        MaxSelectedPreviewChars,
+        collapseLines: false);
 
     public string Metadata =>
         string.Join(" - ", new[] { FormatLabel, SourceApp, SourceDomain, RelativeTime }.Where(value => !string.IsNullOrWhiteSpace(value)));
@@ -60,5 +74,29 @@ public sealed class ClipboardClip
         }
 
         return written == text.Length ? text : new string(buffer[..written]);
+    }
+
+    private static string SanitizeAndClampForDisplay(string? text, int maxChars, bool collapseLines)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return string.Empty;
+        }
+
+        var sanitized = SanitizeForDisplay(text);
+        if (collapseLines)
+        {
+            sanitized = sanitized
+                .Replace("\r\n", " ", StringComparison.Ordinal)
+                .Replace('\r', ' ')
+                .Replace('\n', ' ');
+        }
+
+        if (sanitized.Length <= maxChars)
+        {
+            return sanitized;
+        }
+
+        return $"{sanitized[..Math.Max(1, maxChars - 3)]}...";
     }
 }
