@@ -199,15 +199,21 @@ public sealed partial class MainWindow
                 ColumnSpacing = 8,
                 ColumnDefinitions =
                 {
-                    new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                    new ColumnDefinition { Width = new GridLength(250) },
+                    new ColumnDefinition { Width = new GridLength(260) },
                     new ColumnDefinition { Width = GridLength.Auto },
                     new ColumnDefinition { Width = GridLength.Auto },
                     new ColumnDefinition { Width = GridLength.Auto }
                 }
             };
 
-            var left = new StackPanel { Spacing = 4 };
-            left.Children.Add(new TextBlock { Text = label });
+            var labelBlock = new TextBlock
+            {
+                Text = label,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            row.Children.Add(labelBlock);
+
             var valueBox = new TextBox
             {
                 Text = bindings[id].ToString(),
@@ -216,23 +222,23 @@ public sealed partial class MainWindow
             };
             valueBox.PointerPressed += (_, _) => StartCaptureMode(id, label);
             valueBox.GotFocus += (_, _) => StartCaptureMode(id, label);
-            left.Children.Add(valueBox);
             displayBoxes[id] = valueBox;
-            row.Children.Add(left);
+            Grid.SetColumn(valueBox, 1);
+            row.Children.Add(valueBox);
 
             var setButton = new Button
             {
                 Content = "Set",
-                VerticalAlignment = VerticalAlignment.Bottom
+                VerticalAlignment = VerticalAlignment.Center
             };
             setButton.Click += (_, _) => StartCaptureMode(id, label);
-            Grid.SetColumn(setButton, 1);
+            Grid.SetColumn(setButton, 2);
             row.Children.Add(setButton);
 
             var clearButton = new Button
             {
                 Content = "Clear",
-                VerticalAlignment = VerticalAlignment.Bottom
+                VerticalAlignment = VerticalAlignment.Center
             };
             clearButton.Click += (_, _) =>
             {
@@ -244,18 +250,18 @@ public sealed partial class MainWindow
                     StopCaptureMode();
                 }
             };
-            Grid.SetColumn(clearButton, 2);
+            Grid.SetColumn(clearButton, 3);
             row.Children.Add(clearButton);
 
             var globalCheckBox = new CheckBox
             {
                 Content = "Global",
-                VerticalAlignment = VerticalAlignment.Bottom,
+                VerticalAlignment = VerticalAlignment.Center,
                 IsChecked = bindings[id].IsGlobal == true
             };
             globalCheckBox.Checked += (_, _) => bindings[id].IsGlobal = true;
             globalCheckBox.Unchecked += (_, _) => bindings[id].IsGlobal = false;
-            Grid.SetColumn(globalCheckBox, 3);
+            Grid.SetColumn(globalCheckBox, 4);
             row.Children.Add(globalCheckBox);
 
             panel.Children.Add(row);

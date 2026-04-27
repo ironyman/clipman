@@ -22,12 +22,12 @@ public sealed class HotKeyBinding
 public sealed class HotKeySettings
 {
     // Legacy fields for migration from older settings.json shape.
-    public string Modifier { get; set; } = "Control+Shift";
+    public string Modifier { get; set; } = "Alt";
     public string Key { get; set; } = "V";
 
     public HotKeyBinding ToggleWindow { get; set; } = new()
     {
-        Modifier = "Control+Shift",
+        Modifier = "Alt",
         Key = "V",
         IsGlobal = true
     };

@@ -52,11 +52,11 @@ public sealed class AppSettingsService
         // Migrate legacy settings format.
         if (string.IsNullOrWhiteSpace(settings.ToggleWindow.Key))
         {
-            settings.ToggleWindow.Modifier = string.IsNullOrWhiteSpace(settings.Modifier) ? "Control+Shift" : settings.Modifier.Trim();
+            settings.ToggleWindow.Modifier = string.IsNullOrWhiteSpace(settings.Modifier) ? "Alt" : settings.Modifier.Trim();
             settings.ToggleWindow.Key = string.IsNullOrWhiteSpace(settings.Key) ? "V" : settings.Key.Trim();
         }
 
-        settings.ToggleWindow = NormalizeBinding(settings.ToggleWindow, "Control+Shift", "V", defaultIsGlobal: true);
+        settings.ToggleWindow = NormalizeBinding(settings.ToggleWindow, "Alt", "V", defaultIsGlobal: true);
         settings.PasteSelected = NormalizeBinding(settings.PasteSelected, string.Empty, "Enter", defaultIsGlobal: false);
         settings.TogglePin = NormalizeBinding(settings.TogglePin, "Control", "P", defaultIsGlobal: false);
         settings.ToggleRightPanel = NormalizeBinding(settings.ToggleRightPanel, "Control", "E", defaultIsGlobal: false);

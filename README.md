@@ -21,7 +21,7 @@ These are the default bindings. You can change all of them in `Settings`.
 
 | Action | Default | Scope |
 |---|---|---|
-| Open/Toggle Clipman window | `Ctrl+Shift+V` | Global |
+| Open/Toggle Clipman window | `Alt+V` | Global |
 | Paste selected clip | `Enter` | Local (when Clipman is focused) |
 | Toggle pin on selected clip | `Ctrl+P` | Local |
 | Show/Hide details panel | `Ctrl+E` | Local |
@@ -35,7 +35,7 @@ These are the default bindings. You can change all of them in `Settings`.
 1. Open `Clipman.csproj` in Visual Studio.
 2. Build and run (`F5`).
 3. Copy anything normally in Windows.
-4. Press `Ctrl+Shift+V` to open Clipman.
+4. Press `Alt+V` to open Clipman.
 5. Search/select a clip and press `Enter` to paste.
 
 ## Search Tips
