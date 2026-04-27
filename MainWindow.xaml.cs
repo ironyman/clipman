@@ -64,8 +64,6 @@ public sealed partial class MainWindow : Window
     private bool _isUpdatingSearchText;
     private bool _isFileSearchMode;
     private int _fileSearchRequestVersion;
-    private bool _recentSlotHintsRefreshQueued;
-    private bool _recentSlotHintsRefreshDirty;
 
     private const string FileSearchClipIdPrefix = "filesearch:";
 
